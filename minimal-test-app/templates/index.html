@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AEGENTRA Minimal Test App</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .vuln { border: 1px solid #ccc; margin: 10px; padding: 15px; }
+        .vuln h3 { color: #d32f2f; }
+        form { margin: 10px 0; }
+        input, button { padding: 8px; margin: 5px; }
+    </style>
+</head>
+<body>
+    <h1>AEGENTRA Minimal Test Application</h1>
+    <p><strong>Exactly 10 vulnerabilities for testing AEGENTRA automation</strong></p>
+
+    <div class="vuln">
+        <h3>Vulnerability 1: SQL Injection (Login)</h3>
+        <form action="/login" method="POST">
+            Username: <input type="text" name="username" value="admin"><br>
+            Password: <input type="password" name="password" value="password123"><br>
+            <button type="submit">Login</button>
+        </form>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 2: XSS (Search)</h3>
+        <form action="/search" method="POST">
+            Search: <input type="text" name="query" value=""><br>
+            <button type="submit">Search</button>
+        </form>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 3: SQL Injection (Search)</h3>
+        <p><em>Removed to avoid duplicate SQL Injection vulnerability</em></p>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 4: XSS (Profile)</h3>
+        <a href="/profile?bio=<script>alert('XSS')</script>">View Profile with XSS</a>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 5: Insecure Direct Object Reference</h3>
+        <a href="/profile?id=2">View User ID 2 (Should be admin only)</a>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 6: Arbitrary File Upload</h3>
+        <form action="/upload" method="POST" enctype="multipart/form-data">
+            File: <input type="file" name="file"><br>
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 7: Broken Authentication</h3>
+        <a href="/admin?debug=true">Access Admin Panel (Debug Bypass)</a>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 8: CSRF (Password Reset)</h3>
+        <form action="/reset-password" method="POST">
+            Email: <input type="email" name="email" value="admin@test.com"><br>
+            <button type="submit">Reset Password</button>
+        </form>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 9: Information Disclosure</h3>
+        <a href="/api/data?user_id=1">Get User Data (Exposes Password)</a>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 10: Directory Traversal</h3>
+        <a href="/download?file=../../../../etc/passwd">Download System File</a>
+    </div>
+
+    <div class="vuln">
+        <h3>Vulnerability 10: Command Injection (Comment)</h3>
+        <a href="/comment">Leave a Comment</a>
+    </div>
+    
+    <hr>
+    <h3>Navigation Links:</h3>
+    <a href="/login">Login</a> |
+    <a href="/search">Search</a> |
+    <a href="/profile">Profile</a> |
+    <a href="/upload">Upload</a> |
+    <a href="/admin">Admin</a> |
+    <a href="/comment">Comment</a>
+</body>
+</html>

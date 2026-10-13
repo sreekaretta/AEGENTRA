@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>User Profile</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>User ID:</strong> {{ user.id }}</p>
+                        <p><strong>Username:</strong> {{ user.username }}</p>
+                        <p><strong>Email:</strong> {{ user.email }}</p>
+                        <p><strong>Role:</strong> {{ user.role }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Profile:</strong> {{ user.profile or 'No profile information' }}</p>
+                    </div>
+                </div>
+                
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Insecure Direct Object Reference (IDOR)
+                    <br>Try accessing other profiles: 
+                    <a href="{{ url_for('profile', id=1) }}">User 1</a> | 
+                    <a href="{{ url_for('profile', id=2) }}">User 2</a> | 
+                    <a href="{{ url_for('profile', id=3) }}">User 3</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>IDOR Test</h5>
+            </div>
+            <div class="card-body">
+                <p>Current User ID: {{ user.id }}</p>
+                <p>Try accessing other user profiles by changing the ID parameter:</p>
+                <ul>
+                    <li><a href="{{ url_for('profile', id=1) }}">?id=1</a></li>
+                    <li><a href="{{ url_for('profile', id=2) }}">?id=2</a></li>
+                    <li><a href="{{ url_for('profile', id=3) }}">?id=3</a></li>
+                </ul>
+                <p>This demonstrates the IDOR vulnerability where any user can access any other user's profile.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

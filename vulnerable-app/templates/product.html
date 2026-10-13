@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>{{ product.name }}</h3>
+            </div>
+            <div class="card-body">
+                <p><strong>Description:</strong> {{ product.description }}</p>
+                <p><strong>Price:</strong> ${{ product.price }}</p>
+                <p><strong>Category:</strong> {{ product.category }}</p>
+                <p><strong>Product ID:</strong> {{ product.id }}</p>
+                
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Product ID is vulnerable to SQL injection. Try: 
+                    <code>/product/1' OR '1'='1</code>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>Comments</h5>
+            </div>
+            <div class="card-body">
+                {% if comments %}
+                    {% for comment in comments %}
+                        <div class="mb-3">
+                            <strong>{{ comment.username }}:</strong>
+                            <!-- VULNERABILITY: XSS - No output encoding -->
+                            <p>{{ comment.comment|safe }}</p>
+                            <small class="text-muted">{{ comment.created_at }}</small>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No comments yet.</p>
+                {% endif %}
+                
+                {% if session.username %}
+                    <hr>
+                    <h6>Add Comment</h6>
+                    <form method="POST" action="{{ url_for('add_comment') }}">
+                        <input type="hidden" name="product_id" value="{{ product.id }}">
+                        <div class="mb-3">
+                            <textarea class="form-control" name="comment" rows="3" placeholder="Add your comment..." required></textarea>
+                            <div class="form-text">
+                                <strong>Vulnerability:</strong> XSS possible. Try: 
+                                <code><script>alert(1)</script></code>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Comment</button>
+                    </form>
+                {% else %}
+                    <p><a href="{{ url_for('login') }}">Login</a> to add comments.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Test Scenarios</h5>
+            </div>
+            <div class="card-body">
+                <h6>SQL Injection Tests:</h6>
+                <ul>
+                    <li><a href="/product/1' OR '1'='1">Basic SQLi</a></li>
+                    <li><a href="/product/1' UNION SELECT * FROM users--">Union-based</a></li>
+                    <li><a href="/product/1' AND (SELECT COUNT(*) FROM users) > 0--">Blind SQLi</a></li>
+                </ul>
+                
+                <h6>XSS Tests:</h6>
+                <ul>
+                    <li>In comments: <code><script>alert(1)</script></code></li>
+                    <li><code><img src=x onerror=alert(1)></code></li>
+                    <li><code><svg onload=alert(1)></code></li>
+                </ul>
+                
+                <h6>CSRF Tests:</h6>
+                <p>No CSRF tokens used - vulnerable to CSRF attacks</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

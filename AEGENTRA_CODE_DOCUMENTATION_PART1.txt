@@ -1,0 +1,1501 @@
+================================================================================
+     AEGENTRA — COMPLETE CODE DOCUMENTATION  (Part 1 of 3)
+     Files 1–10: Config, Infrastructure, Agents (Base + Pipeline Stages 1-4)
+================================================================================
+
+================================================================================
+FILE 1: config.yaml
+PURPOSE: Master configuration loaded by ALL agents via yaml.safe_load(). Defines
+scan targets, Kafka topics, patching permissions, risk weights, compliance tags,
+and infrastructure paths. No agent hardcodes values — everything reads from here.
+================================================================================
+
+# ═══════════════════════════════════════════════════════════════
+#                    AEGENTRA CONFIGURATION
+#     AI-Powered Multi-Agent Security Automation Platform
+# ═══════════════════════════════════════════════════════════════
+
+targets:
+  production:
+    url: "https://mycompany.com"
+    description: "Production website - requires approval"
+  staging:
+    url: "https://staging.mycompany.com"
+    description: "Staging environment"
+  dvwa:
+    url: "http://localhost:8082"
+    description: "DVWA - PHP vulnerable app"
+  bwapp:
+    url: "http://localhost:9091"
+    description: "bWAPP - Stable PHP vulnerable app"
+  webgoat:
+    url: "http://localhost:9092/WebGoat"
+    description: "WebGoat - OWASP educational platform"
+  mutillidae:
+    url: "http://localhost:9094"
+    description: "Mutillidae - OWASP vulnerable app"
+  juiceshop:
+    url: "http://localhost:9090"
+    description: "OWASP Juice Shop - Modern SPA"
+  testsite:
+    url: "http://testphp.vulnweb.com"
+    description: "Public test site"
+  aegentra_test:
+    url: "http://localhost:8085"
+    description: "AEGENTRA Vulnerable Test Application - 20+ vulnerabilities"
+  minimal_test:
+    url: "http://localhost:8087"
+    description: "AEGENTRA Minimal Test Application - 10 controlled vulnerabilities with Nginx proxy"
+
+active_target: "minimal_test"
+
+kafka:
+  bootstrap_servers: "localhost:9092"
+  topics:
+    detection: "web-detection-alerts"
+    unified: "unified-alerts"
+    incidents: "correlated-incidents"
+    analysis: "llm-analysis"
+    plans: "response-plans"
+    decisions: "policy-decisions"
+    execution: "executed-actions"
+    audit: "audit-logs"
+
+ai:
+  provider: "pattern-matching"
+  model: "enterprise-pattern-matching"
+  max_tokens: 1000
+  temperature: 0.1
+
+scanning:
+  timeout: 300
+  max_depth: 3
+  threads: 10
+  spider_max_duration: 10
+  passive_scan: true
+  active_scan: true
+  requests_per_second: 10
+
+correlation:
+  time_window_minutes: 5
+  group_threshold: 5
+  max_alerts_per_incident: 100
+
+analysis:
+  severity_threshold: 2
+  confidence_threshold: 0.7
+  max_analysis_time: 60
+
+patching:
+  mode: "balanced"
+  auto_patch:
+    security_headers: true
+    waf_rules: true
+    rate_limiting: true
+    error_handling: true
+    ssl_tls: true
+    firewall_rules: false
+    input_validation: false
+    prepared_statements: false
+    csrf_tokens: false
+    authentication: false
+  safety:
+    max_actions_per_incident: 5
+    require_backup: true
+    verify_syntax: true
+    test_after_patch: true
+    auto_rollback_on_failure: true
+    production_protection: true
+  verification:
+    enabled: false
+    timeout_seconds: 10
+    max_response_time_increase: 2.0
+    check_accessibility: true
+    check_errors: true
+    check_performance: true
+
+execution:
+  timeout: 300
+  max_concurrent_actions: 3
+  retry_on_failure: true
+  max_retries: 2
+  dry_run: false
+  log_all_actions: true
+  container_mode: true
+  container_prefix: ""
+
+policy:
+  severity_threshold: 9
+  confidence_threshold: 0.7
+  risk_weights:
+    business_impact: 0.35
+    reversibility: 0.25
+    complexity: 0.20
+    success_probability: 0.20
+  safe_actions:
+    - add_security_headers
+    - alert_security_team
+    - enable_rate_limiting
+    - add_waf_rule
+    - quarantine_url
+    - configure_web_server
+    - update_ssl_config
+    - add_content_security_policy
+    - enable_enhanced_monitoring
+  risky_actions:
+    - shutdown_service
+    - isolate_server
+    - block_network
+    - modify_database
+    - restart_application
+    - delete_files
+    - change_permissions
+  high_impact_keywords:
+    - production
+    - prod
+    - payment
+    - checkout
+    - database
+    - authentication
+    - login
+    - admin
+    - api
+
+monitoring:
+  slack_webhook: ""
+  email_recipients: []
+  pagerduty_key: ""
+  alert_on_critical: true
+  alert_on_high: true
+  alert_on_execution: false
+  alert_log: "/tmp/aegentra_alerts.log"
+  monitoring_log: "/tmp/aegentra_monitoring.log"
+  ticket_log: "/tmp/aegentra_tickets.log"
+  code_fix_log: "/tmp/aegentra_code_fixes.log"
+
+logging:
+  level: "INFO"
+  format: "detailed"
+  file: "logs/aegentra.log"
+
+compliance:
+  retention_period: "7_years"
+  compliance_tags:
+    - SOC2
+    - GDPR
+    - PCI-DSS
+    - AUTOMATED
+    - ENTERPRISE
+  require_approval_for:
+    - severity_9_or_higher
+    - database_changes
+    - production_targets
+
+infrastructure:
+  minimal_test:
+    nginx_config: "~/Aegentra1/minimal-test-app/nginx.conf"
+    nginx_container: "aegentra-minimal-nginx"
+    reload_command: "docker exec aegentra-minimal-nginx nginx -s reload"
+  juiceshop:
+    nginx_config: "/tmp/juice-nginx/nginx.conf"
+    nginx_container: "juice-shop-nginx"
+    reload_command: "docker exec juice-shop-nginx nginx -s reload"
+  apache:
+    config_dir: "/etc/apache2"
+    security_conf: "/etc/apache2/conf-enabled/security.conf"
+    htaccess_path: "/var/www/html/.htaccess"
+    restart_command: "systemctl restart apache2"
+    syntax_check: "apache2ctl configtest"
+  nginx:
+    config_dir: "/etc/nginx"
+    main_conf: "/etc/nginx/nginx.conf"
+    sites_available: "/etc/nginx/sites-available"
+    restart_command: "systemctl restart nginx"
+    syntax_check: "nginx -t"
+  iis:
+    config_path: "C:\\inetpub\\wwwroot\\web.config"
+    restart_command: "iisreset"
+  modsecurity:
+    rules_dir: "/etc/modsecurity/rules"
+    custom_rules: "/etc/modsecurity/custom_rules.conf"
+  backup:
+    enabled: true
+    backup_dir: "/tmp/aegentra_backups"
+    keep_backups: 10
+
+
+================================================================================
+FILE 2: infrastructure/docker-compose.yml
+PURPOSE: Defines the backend infrastructure stack. Runs Zookeeper (port 2181),
+Kafka (9092), PostgreSQL/cyberdefense DB (5432), Redis with password (6379),
+and Kafka-UI web console (8080). All share the aegentra-net bridge network with
+named persistent volumes.
+================================================================================
+
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: cyberdefense
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: SecurePassword123!
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass RedisSecurePass123!
+    volumes:
+      - redis-data:/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: aegentra
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+networks:
+  aegentra-net:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  kafka-data:
+  postgres-data:
+  redis-data:
+
+
+================================================================================
+FILE 3: infrastructure/init-db.sql
+PURPOSE: Auto-executed on PostgreSQL container startup. Creates incidents,
+alerts, audit_logs, and policy_rules tables with JSONB columns, 6 performance
+indexes, and inserts 3 default policy rules (high/medium/low confidence tiers).
+================================================================================
+
+-- Aegentra Database Schema
+
+CREATE TABLE IF NOT EXISTS incidents (
+    id SERIAL PRIMARY KEY,
+    incident_id VARCHAR(100) UNIQUE NOT NULL,
+    severity VARCHAR(20),
+    status VARCHAR(50),
+    source_ips TEXT[],
+    destination_ips TEXT[],
+    attack_type VARCHAR(100),
+    mitre_tactics TEXT[],
+    mitre_techniques TEXT[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+    id SERIAL PRIMARY KEY,
+    alert_id VARCHAR(100) UNIQUE NOT NULL,
+    incident_id VARCHAR(100) REFERENCES incidents(incident_id),
+    alert_type VARCHAR(50),
+    source_ip VARCHAR(45),
+    destination_ip VARCHAR(45),
+    source_port INTEGER,
+    destination_port INTEGER,
+    protocol VARCHAR(20),
+    signature VARCHAR(500),
+    severity INTEGER,
+    raw_data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    agent_name VARCHAR(100) NOT NULL,
+    incident_id VARCHAR(100),
+    action_type VARCHAR(50) NOT NULL,
+    evidence JSONB,
+    policy_rule VARCHAR(200),
+    reasoning_trace TEXT,
+    confidence_score FLOAT,
+    action_outcome VARCHAR(50),
+    metadata JSONB
+);
+
+CREATE TABLE IF NOT EXISTS policy_rules (
+    id SERIAL PRIMARY KEY,
+    rule_name VARCHAR(200) UNIQUE NOT NULL,
+    rule_type VARCHAR(50),
+    conditions JSONB,
+    actions TEXT[],
+    enabled BOOLEAN DEFAULT true,
+    priority INTEGER DEFAULT 100,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_incidents_created_at ON incidents(created_at);
+CREATE INDEX idx_incidents_severity ON incidents(severity);
+CREATE INDEX idx_alerts_source_ip ON alerts(source_ip);
+CREATE INDEX idx_alerts_incident_id ON alerts(incident_id);
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp);
+CREATE INDEX idx_audit_logs_incident_id ON audit_logs(incident_id);
+
+INSERT INTO policy_rules (rule_name, rule_type, conditions, actions, priority) VALUES
+('high_confidence_blocking', 'execution', '{"min_confidence": 0.85, "max_risk_score": 8}', ARRAY['block_ip', 'alert_soc'], 10),
+('medium_confidence_monitoring', 'execution', '{"min_confidence": 0.65, "max_risk_score": 6}', ARRAY['monitor', 'log'], 50),
+('low_confidence_logging', 'execution', '{"min_confidence": 0.50}', ARRAY['log'], 100);
+
+COMMIT;
+
+
+================================================================================
+FILE 4: agents/base_agent.py
+PURPOSE: Abstract base class (Template Method pattern) used by all 7 pipeline
+agents. Sets up a KafkaConsumer (manual commit, group_id = agent_name + "-group")
+and optional KafkaProducer. The run() loop calls the abstract process_message(),
+forwards non-None results to the output topic, then commits offsets.
+================================================================================
+
+"""
+Base Agent for Aegentra Multi-Agent System
+"""
+
+from kafka import KafkaConsumer, KafkaProducer
+import json
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class BaseAgent:
+    """Base class for all agents in the Aegentra system"""
+
+    def __init__(self, agent_name, input_topic, output_topic=None):
+        self.agent_name = agent_name
+        self.input_topic = input_topic
+        self.output_topic = output_topic
+
+        self.consumer = KafkaConsumer(
+            input_topic,
+            bootstrap_servers=['localhost:9092'],
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            group_id=f"{self.agent_name}-group",
+            auto_offset_reset='earliest',
+            enable_auto_commit=False,
+            max_poll_interval_ms=300000,
+            session_timeout_ms=30000
+        )
+
+        self.producer = None
+        if output_topic:
+            self.producer = KafkaProducer(
+                bootstrap_servers=['localhost:9092'],
+                value_serializer=lambda x: json.dumps(x).encode('utf-8'),
+                request_timeout_ms=30000
+            )
+
+        logger.info(f"{agent_name} initialized")
+        logger.info(f"Consuming from: {input_topic}")
+        if output_topic:
+            logger.info(f"Producing to: {output_topic}")
+
+    def deserialize_message(self, message):
+        return message.value
+
+    def process_message(self, message):
+        raise NotImplementedError("Subclasses must implement process_message()")
+
+    def run(self):
+        logger.info(f"{self.agent_name} starting...")
+
+        try:
+            for message in self.consumer:
+                decoded_message = self.deserialize_message(message)
+
+                if decoded_message:
+                    msg_id = decoded_message.get('incident_id', decoded_message.get('alert_id', 'unknown'))
+                    logger.info(f"Received message: {msg_id}")
+
+                    result = self.process_message(decoded_message)
+
+                    if result and self.producer:
+                        self.producer.send(self.output_topic, result)
+                        self.producer.flush(timeout=10)
+
+                    self.consumer.commit()
+
+        except KeyboardInterrupt:
+            logger.info(f"{self.agent_name} stopping...")
+            self.cleanup()
+        except Exception as e:
+            logger.error(f"Error in {self.agent_name}: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        logger.info("Closing Kafka connections...")
+        if self.consumer:
+            self.consumer.close()
+        if self.producer:
+            self.producer.close()
+
+
+================================================================================
+FILE 5: agents/monitoring/monitoring_agent.py
+PURPOSE: Pipeline Stage 1. Consumes "web-detection-alerts", applies a 3-rule
+filter: HIGH/MEDIUM (severity>=2) → forward; LOW in 12-item safe list → forward
+as safe_config_fix; everything else → "filtered-out-alerts". Tracks stats and
+logs automation rate every 50 messages.
+================================================================================
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+import logging
+from datetime import datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class WebMonitoringAgent(BaseAgent):
+    """Smart Web Monitoring Agent with Filtered Alerts Topic"""
+
+    def __init__(self):
+        super().__init__(
+            agent_name="WebMonitor-Enterprise-v8",
+            input_topic="web-detection-alerts",
+            output_topic="unified-alerts"
+        )
+
+        self.safe_low_severity = [
+            'X-Content-Type-Options Header Missing',
+            'X-Frame-Options Header Not Set',
+            'X-XSS-Protection Header Not Set',
+            'Strict-Transport-Security Header Not Set',
+            'Content-Security-Policy Header Missing',
+            'Directory Browsing',
+            'Server Leaks Version Information',
+            'Cookie Without Secure Flag',
+            'Cookie Without HttpOnly Flag',
+            'Missing Anti-clickjacking Header',
+            'Referrer Policy Header Not Set',
+            'Permissions Policy Header Not Set'
+        ]
+
+        self.stats = {'total': 0, 'high_medium': 0, 'safe_low': 0, 'filtered': 0}
+
+    def process_message(self, message):
+        self.stats['total'] += 1
+
+        try:
+            severity = message.get('severity', 0)
+            vulnerability = message.get('vulnerability', '')
+
+            if severity >= 2:
+                self.stats['high_medium'] += 1
+                message['detection_source'] = 'web'
+                message['automation_reason'] = 'high_medium_severity'
+                logger.info(f"✅ HIGH/MED: {vulnerability[:50]} (severity: {severity})")
+                return message
+
+            elif self.is_safe_low_severity(vulnerability):
+                self.stats['safe_low'] += 1
+                message['detection_source'] = 'web'
+                message['automation_reason'] = 'safe_config_fix'
+                logger.info(f"✅ SAFE-LOW: {vulnerability[:50]} (severity: {severity})")
+                return message
+
+            else:
+                self.stats['filtered'] += 1
+                filtered_alert = {
+                    'original_alert': message,
+                    'filtered_at': datetime.now().isoformat(),
+                    'filter_reason': 'Low severity + not safe for automation',
+                    'severity': severity,
+                    'vulnerability': vulnerability,
+                    'url': message.get('url', ''),
+                    'automation_decision': 'FILTERED',
+                    'requires_manual_review': False
+                }
+                if self.producer:
+                    self.producer.send('filtered-out-alerts', filtered_alert)
+                logger.info(f"❌ FILTERED: {vulnerability[:50]} → filtered-out-alerts")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            return None
+
+    def is_safe_low_severity(self, vulnerability):
+        for safe_vuln in self.safe_low_severity:
+            if safe_vuln.lower() in vulnerability.lower():
+                return True
+        return False
+
+    def run(self):
+        logger.info(f"\n{'='*60}")
+        logger.info(f"  {self.agent_name} STARTED - ENTERPRISE FILTERING")
+        logger.info(f"{'='*60}")
+        logger.info("Filtering Rules:")
+        logger.info("  ✅ High/Medium severity → unified-alerts")
+        logger.info("  ✅ Low severity + safe config → unified-alerts")
+        logger.info("  ❌ Low severity + risky → filtered-out-alerts\n")
+
+        try:
+            for kafka_message in self.consumer:
+                message = kafka_message.value
+                output = self.process_message(message)
+
+                if output and self.producer:
+                    self.producer.send(self.output_topic, output)
+                    self.producer.flush(timeout=10)
+
+                self.consumer.commit()
+
+                if self.stats['total'] % 50 == 0:
+                    total_forwarded = self.stats['high_medium'] + self.stats['safe_low']
+                    automation_rate = (total_forwarded / self.stats['total'] * 100) if self.stats['total'] > 0 else 0
+                    logger.info(
+                        f"\n📊 PROGRESS - Processed: {self.stats['total']}"
+                        f"\n   Forwarded: {total_forwarded} ({automation_rate:.1f}%)"
+                        f"\n   Filtered: {self.stats['filtered']}\n"
+                    )
+
+        except KeyboardInterrupt:
+            self.print_final_stats()
+        finally:
+            self.cleanup()
+
+    def print_final_stats(self):
+        total_forwarded = self.stats['high_medium'] + self.stats['safe_low']
+        automation_rate = (total_forwarded / self.stats['total'] * 100) if self.stats['total'] > 0 else 0
+        logger.info(f"\n📊 FINAL STATISTICS:")
+        logger.info(f"Total Processed:        {self.stats['total']}")
+        logger.info(f"  High/Medium Severity: {self.stats['high_medium']}")
+        logger.info(f"  Safe Low-Severity:    {self.stats['safe_low']}")
+        logger.info(f"  Total Forwarded:      {total_forwarded} ({automation_rate:.1f}%)")
+        logger.info(f"  Filtered Out:         {self.stats['filtered']}")
+
+
+if __name__ == "__main__":
+    agent = WebMonitoringAgent()
+    agent.run()
+
+
+================================================================================
+FILE 6: agents/correlation/correlation_agent.py
+PURPOSE: Pipeline Stage 2. Groups alerts into incidents using key = source_ip +
+"_" + alert_type. Creates incident when group reaches threshold (default 5,
+from config.yaml). Incident ID format: "INC-{timestamp}-{count}". Flushes old
+groups exceeding the 5-minute time window. On shutdown, flushes all remaining
+partial groups via cleanup().
+================================================================================
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+from datetime import datetime, timedelta
+from collections import defaultdict
+import logging
+import yaml
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class CorrelationAgent(BaseAgent):
+    """ENTERPRISE Correlation Agent: Groups related alerts into incidents"""
+
+    def __init__(self):
+        super().__init__(
+            agent_name="CorrelationAgent-Enterprise-v8",
+            input_topic="unified-alerts",
+            output_topic="correlated-incidents"
+        )
+
+        config_path = os.path.join(os.path.dirname(__file__), '..', '..', 'config.yaml')
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+
+        correlation_config = config.get('correlation', {})
+        time_window_minutes = correlation_config.get('time_window_minutes', 5)
+        self.group_threshold = correlation_config.get('group_threshold', 5)
+        self.max_alerts = correlation_config.get('max_alerts_per_incident', 100)
+
+        self.time_window = timedelta(minutes=time_window_minutes)
+        self.alert_buffer = defaultdict(list)
+        self.incident_count = 0
+
+        logger.info(f"✅ Correlation settings: window={time_window_minutes}min, threshold={self.group_threshold}")
+
+    def process_message(self, message):
+        try:
+            alert = message
+            source_ip = alert.get('source_ip', alert.get('url', 'unknown'))
+            alert_type = alert.get('alert_type', 'web_vulnerability')
+            timestamp_str = alert.get('timestamp', datetime.now().isoformat())
+
+            try:
+                timestamp = datetime.fromisoformat(timestamp_str)
+            except:
+                timestamp = datetime.now()
+
+            group_key = f"{source_ip}_{alert_type}"
+            self.alert_buffer[group_key].append({'alert': alert, 'timestamp': timestamp})
+
+            logger.info(f"Added alert to group {group_key}. Buffer size: {len(self.alert_buffer[group_key])}")
+
+            if len(self.alert_buffer[group_key]) >= self.group_threshold:
+                incident = self.create_incident(group_key)
+                return incident
+
+            self.flush_old_groups()
+            return None
+
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def create_incident(self, group_key):
+        alerts = self.alert_buffer[group_key]
+
+        if not alerts:
+            return None
+
+        if len(alerts) > self.max_alerts:
+            alerts = alerts[:self.max_alerts]
+
+        alerts.sort(key=lambda x: x['timestamp'])
+        self.incident_count += 1
+
+        incident = {
+            'incident_id': f"INC-{int(datetime.now().timestamp())}-{self.incident_count}",
+            'created_at': datetime.now().isoformat(),
+            'group_key': group_key,
+            'alert_count': len(alerts),
+            'first_seen': alerts[0]['timestamp'].isoformat(),
+            'last_seen': alerts[-1]['timestamp'].isoformat(),
+            'source_ip': alerts[0]['alert'].get('source_ip', alerts[0]['alert'].get('url', 'unknown')),
+            'alert_type': alerts[0]['alert'].get('alert_type', 'web_vulnerability'),
+            'alerts': [a['alert'] for a in alerts],
+            'severity': max([a['alert'].get('severity', 0) for a in alerts]),
+            'summary': f"{len(alerts)} related alerts from {group_key}"
+        }
+
+        logger.info(f"✅ Created incident {incident['incident_id']} with {len(alerts)} alerts")
+
+        if self.producer:
+            self.producer.send(self.output_topic, incident)
+            self.producer.flush(timeout=10)
+
+        self.alert_buffer[group_key] = []
+        return incident
+
+    def flush_old_groups(self):
+        now = datetime.now()
+        for group_key in list(self.alert_buffer.keys()):
+            alerts = self.alert_buffer[group_key]
+            if not alerts:
+                continue
+            oldest = min([a['timestamp'] for a in alerts])
+            if now - oldest > self.time_window:
+                if len(alerts) > 0:
+                    self.create_incident(group_key)
+
+    def cleanup(self):
+        logger.info("Flushing all remaining groups...")
+        total_flushed = 0
+        for group_key in list(self.alert_buffer.keys()):
+            if len(self.alert_buffer[group_key]) > 0:
+                incident = self.create_incident(group_key)
+                if incident:
+                    total_flushed += 1
+        logger.info(f"Flushed {total_flushed} remaining incidents")
+        logger.info(f"Total incidents created: {self.incident_count}")
+        super().cleanup()
+
+
+if __name__ == "__main__":
+    agent = CorrelationAgent()
+    agent.run()
+
+
+================================================================================
+FILE 7: agents/analysis/ai_analysis.py   [ACTIVE / PRIMARY VERSION]
+PURPOSE: Pipeline Stage 3 — production analysis agent. Uses 12-rule deterministic
+keyword pattern matching (no external API). Extracts CWE ID from alert field or
+via regex on descriptions. Returns threat_type, severity (1-10), confidence,
+MITRE technique/tactic, immediate_actions list, and reasoning. Labeled
+"enterprise-pattern-matching" in model_used field.
+================================================================================
+
+#!/usr/bin/env python3
+"""AEGENTRA AI Analysis Agent - ENTERPRISE GRADE"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+import json
+import logging
+from datetime import datetime
+import re
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class AIAnalysisAgent(BaseAgent):
+    """ENTERPRISE AI Analysis - Works for ANY vulnerability type"""
+
+    def __init__(self):
+        super().__init__(
+            agent_name="AIAnalysisAgent-Enterprise-v10",
+            input_topic="correlated-incidents",
+            output_topic="llm-analysis"
+        )
+        self.model = "glm-4-direct"
+        self.analyzed_count = 0
+        logger.info("✅ Enterprise AI Analysis configured")
+
+    def process_message(self, message):
+        try:
+            incident = message
+            incident_id = incident.get('incident_id')
+            logger.info(f"🔍 Analyzing {incident_id}...")
+            analysis = self.analyze_incident_universally(incident)
+            self.analyzed_count += 1
+            logger.info(f"✅ Analysis {self.analyzed_count}: {analysis.get('threat_type')} (severity: {analysis.get('severity')})")
+            return analysis
+        except Exception as e:
+            logger.error(f"Analysis error: {e}")
+            return None
+
+    def analyze_incident_universally(self, incident):
+        alerts = incident.get('alerts', [])
+        if not alerts:
+            return self.create_fallback_analysis(incident)
+
+        first_alert = alerts[0]
+        vulnerability = first_alert.get('vulnerability', '').lower()
+        url = first_alert.get('url', '')
+        description = first_alert.get('description', '').lower()
+
+        cwe_id = first_alert.get('cwe_id', '0')
+        if cwe_id == '0' or cwe_id == 0:
+            cwe_match = re.search(r'CWE-(\d+)', description, re.IGNORECASE)
+            if cwe_match:
+                cwe_id = cwe_match.group(1)
+
+        threat_type, severity, confidence, mitre_tech, mitre_tactic = self.classify_vulnerability(
+            vulnerability, description, url
+        )
+        immediate_actions = self.generate_actions(threat_type, severity, url)
+        reasoning = self.generate_reasoning(threat_type, severity, vulnerability)
+
+        return {
+            'analysis_id': f"ANALYSIS-{incident.get('incident_id')}",
+            'incident_id': incident.get('incident_id'),
+            'analyzed_at': datetime.now().isoformat(),
+            'threat_type': threat_type,
+            'severity': severity,
+            'confidence': confidence,
+            'mitre_technique': mitre_tech,
+            'mitre_tactic': mitre_tactic,
+            'cwe_id': str(cwe_id),
+            'immediate_actions': immediate_actions,
+            'reasoning': reasoning,
+            'original_incident': incident,
+            'model_used': 'enterprise-pattern-matching'
+        }
+
+    def classify_vulnerability(self, vulnerability, description, url):
+        sql_patterns = ['sql injection', 'sql', 'union', 'select', 'insert', 'update', 'delete', 'drop']
+        if any(p in vulnerability for p in sql_patterns) or any(p in description for p in sql_patterns):
+            return 'SQL Injection', 9, 0.95, 'T1190', 'Initial Access'
+
+        xss_patterns = ['xss', 'cross-site scripting', 'script', 'javascript', 'html injection']
+        if any(p in vulnerability for p in xss_patterns) or any(p in description for p in xss_patterns):
+            return 'Cross-Site Scripting (XSS)', 8, 0.90, 'T1189', 'Execution'
+
+        csrf_patterns = ['csrf', 'cross-site request forgery']
+        if any(p in vulnerability for p in csrf_patterns):
+            return 'Cross-Site Request Forgery (CSRF)', 7, 0.85, 'T1566', 'Initial Access'
+
+        auth_patterns = ['authentication', 'login', 'password', 'credential', 'bypass']
+        if any(p in vulnerability for p in auth_patterns):
+            return 'Authentication Bypass', 9, 0.90, 'T1078', 'Defense Evasion'
+
+        upload_patterns = ['file upload', 'upload', 'arbitrary file']
+        if any(p in vulnerability for p in upload_patterns):
+            return 'Arbitrary File Upload', 8, 0.85, 'T1505', 'Persistence'
+
+        info_patterns = ['information disclosure', 'information leak', 'debug', 'error', 'verbose']
+        if any(p in vulnerability for p in info_patterns):
+            return 'Information Disclosure', 5, 0.80, 'T1083', 'Discovery'
+
+        header_patterns = ['header', 'security header', 'x-frame', 'content-security', 'hsts']
+        if any(p in vulnerability for p in header_patterns):
+            return 'Missing Security Headers', 4, 0.75, 'T1190', 'Initial Access'
+
+        dir_patterns = ['directory traversal', 'path traversal', 'file path', '../']
+        if any(p in vulnerability for p in dir_patterns):
+            return 'Directory Traversal', 7, 0.85, 'T1083', 'Discovery'
+
+        cmd_patterns = ['command injection', 'os command', 'system', 'exec']
+        if any(p in vulnerability for p in cmd_patterns):
+            return 'Command Injection', 9, 0.95, 'T1059', 'Execution'
+
+        xxe_patterns = ['xxe', 'xml external entity', 'xml injection']
+        if any(p in vulnerability for p in xxe_patterns):
+            return 'XML External Entity (XXE)', 8, 0.90, 'T1190', 'Initial Access'
+
+        ssrf_patterns = ['ssrf', 'server-side request forgery']
+        if any(p in vulnerability for p in ssrf_patterns):
+            return 'Server-Side Request Forgery (SSRF)', 8, 0.90, 'T1090', 'Command and Control'
+
+        return 'Security Vulnerability', 6, 0.70, 'Unknown', 'Unknown'
+
+    def generate_actions(self, threat_type, severity, url):
+        actions = ['alert_security_team']
+        if severity >= 8:
+            actions.extend(['create_incident_ticket', 'enable_enhanced_monitoring'])
+        if 'sql injection' in threat_type.lower():
+            actions.extend(['use_prepared_statements', 'add_input_validation', 'add_waf_rule'])
+        elif 'xss' in threat_type.lower():
+            actions.extend(['add_output_encoding', 'add_content_security_policy', 'sanitize_user_inputs'])
+        elif 'csrf' in threat_type.lower():
+            actions.extend(['implement_csrf_tokens', 'validate_origin', 'add_samesite_cookies'])
+        elif 'authentication' in threat_type.lower():
+            actions.extend(['strengthen_authentication', 'add_mfa', 'implement_rate_limiting'])
+        elif 'file upload' in threat_type.lower():
+            actions.extend(['validate_file_types', 'scan_uploads', 'restrict_file_execution'])
+        elif 'information disclosure' in threat_type.lower():
+            actions.extend(['remove_verbose_errors', 'sanitize_responses', 'add_security_headers'])
+        elif 'security header' in threat_type.lower():
+            actions.extend(['add_security_headers', 'configure_web_server', 'update_response_headers'])
+        elif 'directory traversal' in threat_type.lower():
+            actions.extend(['validate_file_paths', 'implement_whitelist', 'restrict_file_access'])
+        elif 'command injection' in threat_type.lower():
+            actions.extend(['sanitize_command_inputs', 'use_safe_apis', 'implement_input_validation'])
+        return actions[:5]
+
+    def generate_reasoning(self, threat_type, severity, vulnerability):
+        reasoning = f"Detected {threat_type} with severity {severity}/10. "
+        if severity >= 8:
+            reasoning += "Critical vulnerability requiring immediate attention. "
+        elif severity >= 6:
+            reasoning += "High-risk vulnerability requiring prompt action. "
+        else:
+            reasoning += "Medium-risk vulnerability for configuration fixes. "
+        reasoning += f"Pattern matching identified '{vulnerability}' as {threat_type}."
+        return reasoning
+
+    def create_fallback_analysis(self, incident):
+        return {
+            'analysis_id': f"ANALYSIS-{incident.get('incident_id')}",
+            'incident_id': incident.get('incident_id'),
+            'analyzed_at': datetime.now().isoformat(),
+            'threat_type': 'Unknown Security Issue',
+            'severity': 5,
+            'confidence': 0.5,
+            'mitre_technique': 'Unknown',
+            'mitre_tactic': 'Unknown',
+            'cwe_id': '0',
+            'immediate_actions': ['investigate', 'monitor'],
+            'reasoning': 'Insufficient data - manual investigation required',
+            'original_incident': incident,
+            'model_used': 'fallback'
+        }
+
+    def cleanup(self):
+        logger.info(f"\n✅ Total incidents analyzed: {self.analyzed_count}")
+        super().cleanup()
+
+
+if __name__ == "__main__":
+    agent = AIAnalysisAgent()
+    agent.run()
+
+
+================================================================================
+FILE 8: agents/analysis/ai_analysis_agent.py   [GEMINI VARIANT]
+PURPOSE: Alternate analysis agent calling Google Gemini (gemini-3-flash-preview).
+Builds a structured prompt and parses the JSON response (strips markdown code
+fences). Requires GEMINI_API_KEY env var. Not active in default config — the
+pattern-matching ai_analysis.py is used instead.
+================================================================================
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+import google.generativeai as genai
+import json
+import logging
+from datetime import datetime
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class AIAnalysisAgent(BaseAgent):
+    """AI Analysis Agent: Uses Gemini 3.0 Flash to analyze security incidents"""
+
+    def __init__(self, api_key):
+        super().__init__(
+            agent_name="AIAnalysisAgent-vulnapp-v27",
+            input_topic="correlated-incidents",
+            output_topic="llm-analysis"
+        )
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-3-flash-preview')
+        self.analysis_count = 0
+        logger.info("✅ Gemini 3.1 Flash configured successfully")
+
+    def process_message(self, message):
+        try:
+            incident = message
+            alerts = incident.get('alerts', [])
+            if not alerts:
+                logger.warning(f"No alerts in incident {incident.get('incident_id')}")
+                return None
+
+            first_alert = alerts[0]
+            prompt = self.build_prompt(incident, first_alert)
+
+            logger.info(f"Analyzing incident {incident.get('incident_id')} with Gemini 3.0...")
+            response = self.model.generate_content(prompt)
+            analysis = self.parse_response(response.text, incident)
+
+            if analysis:
+                self.analysis_count += 1
+                logger.info(f"✅ Analyzed {self.analysis_count}: {incident.get('incident_id')}")
+                return analysis
+            return None
+
+        except Exception as e:
+            logger.error(f"Error analyzing incident: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def build_prompt(self, incident, alert):
+        prompt = f"""You are a cybersecurity expert analyzing a security incident.
+
+INCIDENT DETAILS:
+- Incident ID: {incident.get('incident_id')}
+- Alert Count: {incident.get('alert_count')}
+- Severity: {incident.get('severity')}
+- Source: {alert.get('source')}
+
+THREAT INFORMATION:
+- Vulnerability: {alert.get('vulnerability', 'Unknown')}
+- URL/Target: {alert.get('url', 'N/A')}
+- Description: {alert.get('description', 'No description')}
+- Evidence: {alert.get('evidence', 'No evidence')}
+- CWE ID: {alert.get('cwe_id', 'N/A')}
+
+TASK:
+Analyze this security incident and provide:
+1. Threat Type, 2. Severity (1-10), 3. Confidence (0.0-1.0),
+4. MITRE ATT&CK Technique ID, 5. MITRE Tactic, 6. Immediate Actions, 7. Reasoning
+
+RESPOND ONLY WITH VALID JSON:
+{{
+  "threat_type": "...",
+  "severity": 8,
+  "confidence": 0.95,
+  "mitre_technique": "T1190",
+  "mitre_tactic": "Initial Access",
+  "immediate_actions": ["add_waf_rule", "alert_security_team"],
+  "reasoning": "..."
+}}"""
+        return prompt
+
+    def parse_response(self, response_text, incident):
+        try:
+            response_text = response_text.strip()
+            if response_text.startswith('```'):
+                lines = response_text.split('\n')
+                response_text = '\n'.join(lines[1:-1])
+
+            ai_response = json.loads(response_text)
+
+            return {
+                'analysis_id': f"ANALYSIS-{incident.get('incident_id')}",
+                'incident_id': incident.get('incident_id'),
+                'analyzed_at': datetime.now().isoformat(),
+                'threat_type': ai_response.get('threat_type'),
+                'severity': ai_response.get('severity'),
+                'confidence': ai_response.get('confidence'),
+                'mitre_technique': ai_response.get('mitre_technique'),
+                'mitre_tactic': ai_response.get('mitre_tactic'),
+                'immediate_actions': ai_response.get('immediate_actions', []),
+                'reasoning': ai_response.get('reasoning'),
+                'original_incident': incident,
+                'model_used': 'gemini-3-flash-preview'
+            }
+
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Error parsing response: {e}")
+            return None
+
+    def cleanup(self):
+        logger.info(f"Total incidents analyzed: {self.analysis_count}")
+        super().cleanup()
+
+
+if __name__ == "__main__":
+    api_key = os.environ.get('GEMINI_API_KEY')
+    if not api_key:
+        print("❌ ERROR: GEMINI_API_KEY not set!")
+        print("  export GEMINI_API_KEY='your-api-key-here'")
+        sys.exit(1)
+    agent = AIAnalysisAgent(api_key)
+    agent.run()
+
+
+================================================================================
+FILE 9: agents/analysis/ai_analysis_glm.py   [GLM-4 VARIANT]
+PURPOSE: Alternate analysis agent labeled "GLM-4 Direct". Uses identical
+pattern-matching logic as ai_analysis.py but reports model_used='glm-4-direct'.
+deploy_fixes.sh removes this file during deployment as redundant. Kept as
+reference. No external API — purely local classification.
+================================================================================
+
+#!/usr/bin/env python3
+"""AEGENTRA AI Analysis Agent - Direct GLM-4 Integration"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+import json
+import logging
+from datetime import datetime
+import re
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class AIAnalysisAgent(BaseAgent):
+    """AI Analysis using Direct GLM-4 Integration (No API Limits)"""
+
+    def __init__(self):
+        super().__init__(
+            agent_name="AIAnalysisAgent-glm4-direct-v5",
+            input_topic="correlated-incidents",
+            output_topic="llm-analysis"
+        )
+        self.model = "glm-4-direct"
+        self.analyzed_count = 0
+        logger.info("✅ GLM-4 Direct Integration configured successfully")
+
+    def process_message(self, message):
+        try:
+            incident = message
+            incident_id = incident.get('incident_id')
+            logger.info(f"🔍 Analyzing {incident_id} with Direct GLM-4...")
+            analysis = self.analyze_incident_directly(incident)
+            self.analyzed_count += 1
+            logger.info(f"✅ Analysis complete: {analysis.get('threat_type')} (severity: {analysis.get('severity')})")
+            return analysis
+        except Exception as e:
+            logger.error(f"Analysis error: {e}")
+            return None
+
+    def analyze_incident_directly(self, incident):
+        alerts = incident.get('alerts', [])
+        if not alerts:
+            return self.create_fallback_analysis(incident)
+
+        first_alert = alerts[0]
+        vulnerability = first_alert.get('vulnerability', '').lower()
+        url = first_alert.get('url', '')
+        description = first_alert.get('description', '').lower()
+
+        threat_type, severity, confidence, mitre_tech, mitre_tactic = self.classify_vulnerability(
+            vulnerability, description, url
+        )
+        immediate_actions = self.generate_actions(threat_type, severity, url)
+        reasoning = self.generate_reasoning(threat_type, severity, vulnerability)
+
+        return {
+            'analysis_id': f"ANALYSIS-{incident.get('incident_id')}",
+            'incident_id': incident.get('incident_id'),
+            'analyzed_at': datetime.now().isoformat(),
+            'threat_type': threat_type,
+            'severity': severity,
+            'confidence': confidence,
+            'mitre_technique': mitre_tech,
+            'mitre_tactic': mitre_tactic,
+            'immediate_actions': immediate_actions,
+            'reasoning': reasoning,
+            'original_incident': incident,
+            'model_used': 'glm-4-direct'
+        }
+
+    def classify_vulnerability(self, vulnerability, description, url):
+        sql_patterns = ['sql injection', 'sql', 'union', 'select', 'insert', 'update', 'delete', 'drop']
+        if any(p in vulnerability for p in sql_patterns) or any(p in description for p in sql_patterns):
+            return 'SQL Injection', 9, 0.95, 'T1190', 'Initial Access'
+        xss_patterns = ['xss', 'cross-site scripting', 'script', 'javascript', 'html injection']
+        if any(p in vulnerability for p in xss_patterns) or any(p in description for p in xss_patterns):
+            return 'Cross-Site Scripting (XSS)', 8, 0.90, 'T1189', 'Execution'
+        csrf_patterns = ['csrf', 'cross-site request forgery']
+        if any(p in vulnerability for p in csrf_patterns):
+            return 'Cross-Site Request Forgery (CSRF)', 7, 0.85, 'T1566', 'Initial Access'
+        auth_patterns = ['authentication', 'login', 'password', 'credential', 'bypass']
+        if any(p in vulnerability for p in auth_patterns):
+            return 'Authentication Bypass', 9, 0.90, 'T1078', 'Defense Evasion'
+        upload_patterns = ['file upload', 'upload', 'arbitrary file']
+        if any(p in vulnerability for p in upload_patterns):
+            return 'Arbitrary File Upload', 8, 0.85, 'T1505', 'Persistence'
+        info_patterns = ['information disclosure', 'information leak', 'debug', 'error', 'verbose']
+        if any(p in vulnerability for p in info_patterns):
+            return 'Information Disclosure', 5, 0.80, 'T1083', 'Discovery'
+        header_patterns = ['header', 'security header', 'x-frame', 'content-security', 'hsts']
+        if any(p in vulnerability for p in header_patterns):
+            return 'Missing Security Headers', 4, 0.75, 'T1190', 'Initial Access'
+        dir_patterns = ['directory traversal', 'path traversal', 'file path', '../']
+        if any(p in vulnerability for p in dir_patterns):
+            return 'Directory Traversal', 7, 0.85, 'T1083', 'Discovery'
+        cmd_patterns = ['command injection', 'os command', 'system', 'exec']
+        if any(p in vulnerability for p in cmd_patterns):
+            return 'Command Injection', 9, 0.95, 'T1059', 'Execution'
+        return 'Security Vulnerability', 6, 0.70, 'Unknown', 'Unknown'
+
+    def generate_actions(self, threat_type, severity, url):
+        actions = ['alert_security_team']
+        if severity >= 8:
+            actions.extend(['create_incident_ticket', 'enable_enhanced_monitoring'])
+        if 'sql injection' in threat_type.lower():
+            actions.extend(['use_prepared_statements', 'add_input_validation', 'add_waf_rule'])
+        elif 'xss' in threat_type.lower():
+            actions.extend(['add_output_encoding', 'add_content_security_policy', 'sanitize_user_inputs'])
+        elif 'csrf' in threat_type.lower():
+            actions.extend(['implement_csrf_tokens', 'validate_origin', 'add_samesite_cookies'])
+        elif 'authentication' in threat_type.lower():
+            actions.extend(['strengthen_authentication', 'add_mfa', 'implement_rate_limiting'])
+        elif 'file upload' in threat_type.lower():
+            actions.extend(['validate_file_types', 'scan_uploads', 'restrict_file_execution'])
+        elif 'information disclosure' in threat_type.lower():
+            actions.extend(['remove_verbose_errors', 'sanitize_responses', 'add_security_headers'])
+        elif 'security header' in threat_type.lower():
+            actions.extend(['add_security_headers', 'configure_web_server', 'update_response_headers'])
+        elif 'directory traversal' in threat_type.lower():
+            actions.extend(['validate_file_paths', 'implement_whitelist', 'restrict_file_access'])
+        elif 'command injection' in threat_type.lower():
+            actions.extend(['sanitize_command_inputs', 'use_safe_apis', 'implement_input_validation'])
+        return actions[:5]
+
+    def generate_reasoning(self, threat_type, severity, vulnerability):
+        reasoning = f"Detected {threat_type} with severity {severity}/10. "
+        if severity >= 8:
+            reasoning += "Critical vulnerability requiring immediate attention and automated remediation. "
+        elif severity >= 6:
+            reasoning += "High-risk vulnerability that should be addressed promptly. "
+        else:
+            reasoning += "Medium-risk vulnerability that can be mitigated with configuration changes. "
+        reasoning += f"Pattern matching identified '{vulnerability}' as {threat_type}. "
+        reasoning += "Recommended actions focus on immediate protection and long-term fixes."
+        return reasoning
+
+    def create_fallback_analysis(self, incident):
+        return {
+            'analysis_id': f"ANALYSIS-{incident.get('incident_id')}",
+            'incident_id': incident.get('incident_id'),
+            'analyzed_at': datetime.now().isoformat(),
+            'threat_type': 'Unknown Security Issue',
+            'severity': 5, 'confidence': 0.5,
+            'mitre_technique': 'Unknown', 'mitre_tactic': 'Unknown',
+            'immediate_actions': ['investigate', 'monitor'],
+            'reasoning': 'Insufficient data for detailed analysis - manual investigation required',
+            'original_incident': incident,
+            'model_used': 'glm-4-direct'
+        }
+
+    def cleanup(self):
+        logger.info(f"\n✅ Total incidents analyzed: {self.analyzed_count}")
+        super().cleanup()
+
+
+if __name__ == "__main__":
+    agent = AIAnalysisAgent()
+    agent.run()
+
+
+================================================================================
+FILE 8: agents/response/universal_response_planning_agent.py
+PURPOSE: Pipeline Stage 4. Instantiates UniversalActionMapper + TechnologyDetector.
+For each analysis, detects the tech stack, maps vulnerability to actions via
+5-layer logic (MITRE→CWE→vuln_type→tech-specific→severity-based), generates
+WAF patterns/security headers/rate-limit values per action, and produces a
+response plan with plan_id="PLAN-{analysis_id}".
+================================================================================
+
+#!/usr/bin/env python3
+"""Universal Response Planning Agent - ENTERPRISE GRADE"""
+
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from base_agent import BaseAgent
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'universal'))
+from action_mapper import UniversalActionMapper
+from tech_detector import TechnologyDetector
+import logging
+from datetime import datetime
+from typing import Dict, List
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+class UniversalResponsePlanningAgent(BaseAgent):
+    """ENTERPRISE Universal Response Planning — works for ANY vulnerability, ANY tech stack"""
+
+    def __init__(self):
+        super().__init__(
+            agent_name="UniversalResponsePlanningAgent-Enterprise-v8",
+            input_topic="llm-analysis",
+            output_topic="response-plans"
+        )
+        self.action_mapper = UniversalActionMapper()
+        self.tech_detector = TechnologyDetector()
+        self.plan_count = 0
+        logger.info("🌍 ENTERPRISE Universal Response Planning initialized")
+
+    def process_message(self, message):
+        try:
+            analysis = message
+            incident = analysis.get('original_incident', {})
+            incident_id = analysis.get('incident_id')
+
+            tech_stack = self.tech_detector.detect_from_incident(incident)
+
+            logger.info(f"\n🎯 Planning response for {incident_id}")
+            logger.info(f"   Tech Stack: {tech_stack['web_server']}/{tech_stack['language']}/{tech_stack['framework']}")
+
+            cwe_id = analysis.get('cwe_id', '0')
+            if not cwe_id or cwe_id == '0':
+                alerts = incident.get('alerts', [])
+                if alerts:
+                    cwe_id = alerts[0].get('cwe_id', '0')
+
+            actions = self.action_mapper.map_vulnerability_to_actions(
+                vulnerability_type=analysis.get('threat_type', 'Unknown'),
+                cwe_id=str(cwe_id),
+                mitre_technique=analysis.get('mitre_technique', ''),
+                severity=analysis.get('severity', 5),
+                confidence=analysis.get('confidence', 0.5),
+                tech_stack=tech_stack
+            )
+
+            action_plans = []
+            for action in actions:
+                metadata = self.action_mapper.get_action_metadata(action)
+                action_plan = {
+                    'action_type': action,
+                    'target': self._get_target_from_incident(incident),
+                    'parameters': self._generate_parameters(action, analysis, tech_stack),
+                    'metadata': metadata,
+                    'priority': self._calculate_priority(metadata, analysis),
+                    'estimated_duration': self._estimate_duration(action, metadata)
+                }
+                action_plans.append(action_plan)
+
+            response_plan = {
+                'plan_id': f"PLAN-{analysis.get('analysis_id')}",
+                'analysis_id': analysis.get('analysis_id'),
+                'incident_id': incident_id,
+                'created_at': datetime.now().isoformat(),
+                'threat_type': analysis.get('threat_type'),
+                'severity': analysis.get('severity'),
+                'confidence': analysis.get('confidence'),
+                'mitre_technique': analysis.get('mitre_technique'),
+                'mitre_tactic': analysis.get('mitre_tactic'),
+                'cwe_id': str(cwe_id),
+                'tech_stack': tech_stack,
+                'actions': action_plans,
+                'total_actions': len(action_plans),
+                'reasoning': f"Universal mapping: {len(actions)} actions for {analysis.get('threat_type')} on {tech_stack['web_server']}",
+                'universal_plan': True,
+                'bias_free': True,
+                'enterprise_grade': True
+            }
+
+            self.plan_count += 1
+            logger.info(f"✅ Plan {self.plan_count}: {response_plan['plan_id']} with {len(action_plans)} actions")
+
+            return response_plan
+
+        except Exception as e:
+            logger.error(f"Error creating response plan: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    def _get_target_from_incident(self, incident: Dict) -> str:
+        alerts = incident.get('alerts', [])
+        if alerts:
+            return alerts[0].get('url', 'unknown')
+        return 'unknown'
+
+    def _generate_parameters(self, action: str, analysis: Dict, tech_stack: Dict) -> Dict:
+        params = {
+            'threat_type': analysis.get('threat_type'),
+            'severity': analysis.get('severity'),
+            'confidence': analysis.get('confidence'),
+            'cwe_id': analysis.get('cwe_id', '0')
+        }
+        if 'waf' in action:
+            params['pattern'] = self._generate_waf_pattern(analysis.get('threat_type'))
+            params['description'] = f"Block {analysis.get('threat_type')}"
+        elif 'header' in action:
+            params['headers'] = self._get_security_headers(analysis.get('threat_type'))
+        elif 'rate' in action:
+            params['requests_per_minute'] = 60 if analysis.get('severity', 0) >= 7 else 120
+        elif 'alert' in action:
+            params['priority'] = 'high' if analysis.get('severity', 0) >= 8 else 'medium'
+        elif 'validation' in action or 'sanitize' in action:
+            params['validation_type'] = self._get_validation_type(analysis.get('threat_type'))
+        return params
+
+    def _generate_waf_pattern(self, threat_type: str) -> str:
+        patterns = {
+            'SQL Injection': r"(\\'|\\\"|\\OR\\|\\UNION\\|\\SELECT\\|\\DROP\\)",
+            'XSS': r"(<script|javascript:|onerror=|onload=|<img)",
+            'Cross-Site Scripting': r"(<script|javascript:|onerror=|onload=|<img)",
+            'Command Injection': r"(;|&&|\\||`|\\$\\()",
+            'Path Traversal': r"(\\.\\.\\/|\\.\\.\\\\)",
+            'Directory Traversal': r"(\\.\\.\\/|\\.\\.\\\\)",
+            'XXE': r"(<!ENTITY|<!DOCTYPE|SYSTEM)",
+            'SSRF': r"(file://|dict://|gopher://)"
+        }
+        return patterns.get(threat_type, r"(malicious|attack|exploit)")
+
+    def _get_security_headers(self, threat_type: str) -> Dict:
+        headers = {
+            'X-Frame-Options': 'SAMEORIGIN',
+            'X-Content-Type-Options': 'nosniff',
+            'X-XSS-Protection': '1; mode=block'
+        }
+        if 'XSS' in threat_type or 'Cross-Site Scripting' in threat_type:
+            headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'"
+        if 'Clickjacking' in threat_type:
+            headers['X-Frame-Options'] = 'DENY'
+        return headers
+
+    def _get_validation_type(self, threat_type: str) -> str:
+        if 'SQL' in threat_type: return 'sql_injection'
+        elif 'XSS' in threat_type or 'Cross-Site Scripting' in threat_type: return 'xss'
+        elif 'Command' in threat_type: return 'command_injection'
+        elif 'Path' in threat_type or 'Traversal' in threat_type: return 'path_traversal'
+        else: return 'generic'
+
+    def _calculate_priority(self, metadata: Dict, analysis: Dict) -> int:
+        base_priority = 5
+        if analysis.get('severity', 0) >= 8:
+            base_priority += 3
+        if analysis.get('confidence', 0) >= 0.9:
+            base_priority += 1
+        if metadata.get('risk_level') == 'high':
+            base_priority -= 2
+        return max(1, min(10, base_priority))
+
+    def _estimate_duration(self, action: str, metadata: Dict) -> str:
+        if metadata.get('category') == 'configuration': return '< 1 minute'
+        elif metadata.get('category') == 'network_control': return '1-5 minutes'
+        elif metadata.get('category') == 'code_fix': return '30-60 minutes'
+        else: return '5-15 minutes'
+
+    def cleanup(self):
+        logger.info(f"\nTotal Plans Created: {self.plan_count}")
+        super().cleanup()
+
+
+if __name__ == "__main__":
+    agent = UniversalResponsePlanningAgent()
+    agent.run()
+
+================================================================================
+END OF PART 1
+Continue in: AEGENTRA_CODE_DOCUMENTATION_PART2.txt
+================================================================================

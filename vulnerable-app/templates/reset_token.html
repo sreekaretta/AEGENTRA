@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Reset Token - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>Password Reset</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>Test Tokens:</strong>
+                    <ul>
+                        <li>admin@test.com: <code>YWRtaW5AdGVzdC5jb20=</code></li>
+                        <li>user1@test.com: <code>dXNlcjFAdGVzdC5jb20=</code></li>
+                        <li>test@test.com: <code>dGVzdEB0ZXN0LmNvbQ==</code></li>
+                    </ul>
+                </div>
+                
+                <p>Access this page with: <code>/reset_token?token=BASE64_ENCODED_EMAIL</code></p>
+                
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Weak token validation - any base64 encoded email will work
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

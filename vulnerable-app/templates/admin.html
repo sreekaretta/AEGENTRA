@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Panel - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <strong>CRITICAL VULNERABILITY:</strong> Authorization Bypass - Any logged-in user can access admin panel!
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>User Management</h3>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Password Hash</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.username }}</td>
+                                    <td><code>{{ user.password }}</code></td>
+                                    <td>{{ user.email }}</td>
+                                    <td>{{ user.role }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>Search Logs</h3>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Query</th>
+                                <th>IP Address</th>
+                                <th>User Agent</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs %}
+                                <tr>
+                                    <td>{{ log.query }}</td>
+                                    <td>{{ log.ip_address }}</td>
+                                    <td>{{ log.user_agent[:30] }}...</td>
+                                    <td>{{ log.created_at }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Security Issues</h5>
+            </div>
+            <div class="card-body">
+                <h6>Authorization Bypass:</h6>
+                <ul>
+                    <li>No role-based access control</li>
+                    <li>Any authenticated user can access admin functions</li>
+                    <li>Password hashes exposed in admin panel</li>
+                </ul>
+                
+                <h6>Information Disclosure:</h6>
+                <ul>
+                    <li>All user data exposed</li>
+                    <li>Search queries logged without sanitization</li>
+                    <li>User agent strings exposed</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

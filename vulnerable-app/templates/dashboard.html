@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>All Users</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                                <tr>
+                                    <td>{{ user.id }}</td>
+                                    <td>{{ user.username }}</td>
+                                    <td>{{ user.email }}</td>
+                                    <td>{{ user.role }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Information disclosure - all user data is exposed to any logged-in user.
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Products</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Price</th>
+                                <th>Category</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products %}
+                                <tr>
+                                    <td>{{ product.id }}</td>
+                                    <td><a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.name }}</a></td>
+                                    <td>${{ product.price }}</td>
+                                    <td>{{ product.category }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Security Test Scenarios</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>IDOR Test:</h6>
+                        <p>Try accessing other users' profiles:</p>
+                        <ul>
+                            <li><a href="{{ url_for('profile', id=1) }}">User ID 1</a></li>
+                            <li><a href="{{ url_for('profile', id=2) }}">User ID 2</a></li>
+                            <li><a href="{{ url_for('profile', id=3) }}">User ID 3</a></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Product Details:</h6>
+                        <p>Test SQL injection in product IDs:</p>
+                        <ul>
+                            <li><a href="/product/1">Normal Product</a></li>
+                            <li><a href="/product/1' OR '1'='1">SQL Injection Test</a></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Admin Access:</h6>
+                        <p>Test authorization bypass:</p>
+                        <ul>
+                            <li><a href="{{ url_for('admin') }}">Admin Panel</a></li>
+                            <li><a href="{{ url_for('debug') }}">Debug Info</a></li>
+                            <li><a href="{{ url_for('config') }}">Config Info</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

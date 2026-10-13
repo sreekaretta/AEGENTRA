@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Home - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>Welcome to AEGENTRA Test Application</h1>
+        <p class="lead">This is a deliberately vulnerable web application for testing security automation systems.</p>
+        
+        <div class="alert alert-warning">
+            <strong>Warning:</strong> This application contains intentional security vulnerabilities for testing purposes only.
+        </div>
+
+        <h3>Available Features:</h3>
+        <ul>
+            <li><a href="{{ url_for('search') }}">Product Search</a> - Search our product catalog</li>
+            <li><a href="{{ url_for('login') }}">User Login</a> - Access your account</li>
+            <li><a href="{{ url_for('register') }}">Register</a> - Create a new account</li>
+            <li><a href="{{ url_for('upload') }}">File Upload</a> - Upload files to share</li>
+        </ul>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Latest Comments</h5>
+            </div>
+            <div class="card-body">
+                {% if comments %}
+                    {% for comment in comments %}
+                        <div class="mb-3">
+                            <strong>{{ comment.username }}:</strong>
+                            <!-- VULNERABILITY: XSS - No output encoding -->
+                            <p>{{ comment.comment|safe }}</p>
+                            <small class="text-muted">{{ comment.created_at }}</small>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No comments yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5>Test Scenarios</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Authentication Tests:</h6>
+                        <ul>
+                            <li>Try SQL injection in login: <code>' OR '1'='1</code></li>
+                            <li>Test weak passwords: <code>admin/password123</code></li>
+                            <li>Test authorization bypass in admin panel</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Input Validation Tests:</h6>
+                        <ul>
+                            <li>XSS in comments: <code><script>alert(1)</script></code></li>
+                            <li>SQL injection in search: <code>' UNION SELECT * FROM users--</code></li>
+                            <li>Path traversal in uploads: <code>../../../etc/passwd</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

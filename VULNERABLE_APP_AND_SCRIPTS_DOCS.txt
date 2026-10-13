@@ -1,0 +1,1749 @@
+================================================================================
+AEGENTRA - VULNERABLE-APP, VENV, SCRIPTS & UTILITY FILES DOCUMENTATION
+================================================================================
+
+================================================================================
+FILE 1: vulnerable-app/app.py
+================================================================================
+EXPLANATION:
+Flask web application with 20+ deliberate vulnerabilities for extended security
+testing. Runs on port 8085 with debug=True. Has SQL injection in login/search/
+product routes, stored XSS via comment|safe filter, IDOR in profile, unrestricted
+file upload, authorization bypass in admin (checks session exists but not role),
+unauthenticated /api/users endpoint, predictable base64 reset tokens, and critical
+information disclosure routes /debug (exposes os.environ) and /config (hardcoded
+API keys). Passwords stored with weak MD5 hashing (no salt).
+--------------------------------------------------------------------------------
+#!/usr/bin/env python3
+"""
+AEGENTRA Vulnerable Test Application
+A deliberately vulnerable web application for testing security automation
+Contains 20+ vulnerabilities across different categories
+"""
+
+from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, send_from_directory
+import sqlite3
+import os
+import hashlib
+import base64
+from datetime import datetime
+import json
+
+app = Flask(__name__)
+app.secret_key = 'insecure_secret_key_for_testing'  # Weak secret key
+
+DATABASE = 'database/vulnerable_app.db'
+
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Initialize database with sample data"""
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT,
+            email TEXT,
+            role TEXT,
+            profile TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            description TEXT,
+            price REAL,
+            category TEXT
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS comments (
+            id INTEGER PRIMARY KEY,
+            user_id INTEGER,
+            product_id INTEGER,
+            comment TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS search_logs (
+            id INTEGER PRIMARY KEY,
+            query TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    cursor.execute("SELECT COUNT(*) FROM users")
+    if cursor.fetchone()[0] == 0:
+        users = [
+            ('admin', 'password123', 'admin@test.com', 'admin', 'Administrator account'),
+            ('user1', '123456', 'user1@test.com', 'user', 'Regular user'),
+            ('test', 'test', 'test@test.com', 'user', 'Test user'),
+            ('guest', 'guest', 'guest@test.com', 'guest', 'Guest account')
+        ]
+        cursor.executemany("INSERT INTO users (username, password, email, role, profile) VALUES (?, ?, ?, ?, ?)", users)
+
+        products = [
+            ('Laptop', 'High performance laptop', 999.99, 'Electronics'),
+            ('Phone', 'Smartphone with latest features', 699.99, 'Electronics'),
+            ('Book', 'Security testing guide', 29.99, 'Books'),
+            ('Camera', 'Digital camera', 399.99, 'Electronics')
+        ]
+        cursor.executemany("INSERT INTO products (name, description, price, category) VALUES (?, ?, ?, ?)", products)
+
+    conn.commit()
+    conn.close()
+
+@app.route('/')
+def index():
+    """Home page - vulnerable to XSS in comments"""
+    conn = get_db()
+    comments = conn.execute('SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id ORDER BY created_at DESC LIMIT 10').fetchall()
+    conn.close()
+    return render_template('index.html', comments=comments)
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """Login page - vulnerable to SQL injection"""
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        # VULNERABILITY: SQL Injection
+        query = f"SELECT * FROM users WHERE username = '{username}' AND password = '{password}'"
+        conn = get_db()
+        user = conn.execute(query).fetchone()
+        conn.close()
+
+        if user:
+            session['user_id'] = user['id']
+            session['username'] = user['username']
+            session['role'] = user['role']
+            flash('Login successful!', 'success')
+            return redirect(url_for('dashboard'))
+        else:
+            flash('Invalid credentials', 'error')
+
+    return render_template('login.html')
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page - vulnerable to weak password storage"""
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        email = request.form['email']
+
+        # VULNERABILITY: Weak password hashing (MD5, no salt)
+        hashed_password = hashlib.md5(password.encode()).hexdigest()
+
+        conn = get_db()
+        try:
+            conn.execute("INSERT INTO users (username, password, email, role) VALUES (?, ?, ?, ?)",
+                        (username, hashed_password, email, 'user'))
+            conn.commit()
+            flash('Registration successful!', 'success')
+            return redirect(url_for('login'))
+        except sqlite3.IntegrityError:
+            flash('Username already exists', 'error')
+        finally:
+            conn.close()
+
+    return render_template('register.html')
+
+@app.route('/dashboard')
+def dashboard():
+    """Dashboard - vulnerable to information disclosure"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    # VULNERABILITY: All users exposed to any logged-in user
+    conn = get_db()
+    users = conn.execute("SELECT id, username, email, role FROM users").fetchall()
+    products = conn.execute("SELECT * FROM products").fetchall()
+    conn.close()
+
+    return render_template('dashboard.html', users=users, products=products)
+
+@app.route('/search')
+def search():
+    """Search page - vulnerable to SQL injection and XSS"""
+    query = request.args.get('q', '')
+
+    # VULNERABILITY: SQL Injection in search
+    conn = get_db()
+    search_query = f"SELECT * FROM products WHERE name LIKE '%{query}%' OR description LIKE '%{query}%'"
+    products = conn.execute(search_query).fetchall()
+
+    ip_address = request.remote_addr
+    user_agent = request.headers.get('User-Agent', '')
+    conn.execute("INSERT INTO search_logs (query, ip_address, user_agent) VALUES (?, ?, ?)",
+                (query, ip_address, user_agent))
+    conn.commit()
+    conn.close()
+
+    return render_template('search.html', query=query, products=products)
+
+@app.route('/product/<int:product_id>')
+def product_detail(product_id):
+    """Product detail - vulnerable to SQL injection"""
+    conn = get_db()
+    # VULNERABILITY: SQL Injection in product ID
+    query = f"SELECT * FROM products WHERE id = {product_id}"
+    product = conn.execute(query).fetchone()
+
+    comments = conn.execute(
+        'SELECT comments.*, users.username FROM comments JOIN users ON comments.user_id = users.id WHERE product_id = ? ORDER BY created_at DESC',
+        (product_id,)).fetchall()
+    conn.close()
+
+    return render_template('product.html', product=product, comments=comments)
+
+@app.route('/comment', methods=['POST'])
+def add_comment():
+    """Add comment - vulnerable to stored XSS"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    product_id = request.form['product_id']
+    comment = request.form['comment']
+
+    # VULNERABILITY: Stored XSS - no sanitization
+    conn = get_db()
+    conn.execute("INSERT INTO comments (user_id, product_id, comment) VALUES (?, ?, ?)",
+                (session['user_id'], product_id, comment))
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('product_detail', product_id=product_id))
+
+@app.route('/profile')
+def profile():
+    """Profile page - vulnerable to IDOR"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    # VULNERABILITY: Insecure Direct Object Reference
+    user_id = request.args.get('id', session['user_id'])
+
+    conn = get_db()
+    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+
+    return render_template('profile.html', user=user)
+
+@app.route('/upload', methods=['GET', 'POST'])
+def upload_file():
+    """File upload - vulnerable to unrestricted file upload"""
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    if request.method == 'POST':
+        file = request.files['file']
+        if file:
+            # VULNERABILITY: Unrestricted file upload
+            filename = file.filename
+            file.save(os.path.join('uploads', filename))
+            flash(f'File {filename} uploaded successfully!', 'success')
+
+    return render_template('upload.html')
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    """Serve uploaded files - vulnerable to path traversal"""
+    return send_from_directory('uploads', filename)
+
+@app.route('/admin')
+def admin():
+    """Admin panel - vulnerable to authorization bypass"""
+    # VULNERABILITY: Only checks session exists, not role
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db()
+    users = conn.execute("SELECT * FROM users").fetchall()
+    logs = conn.execute("SELECT * FROM search_logs ORDER BY created_at DESC LIMIT 50").fetchall()
+    conn.close()
+
+    return render_template('admin.html', users=users, logs=logs)
+
+@app.route('/api/users')
+def api_users():
+    """API endpoint - vulnerable to no authentication"""
+    # VULNERABILITY: No authentication required
+    conn = get_db()
+    users = conn.execute("SELECT id, username, email, role FROM users").fetchall()
+    conn.close()
+
+    user_list = [dict(user) for user in users]
+    return jsonify(user_list)
+
+@app.route('/reset_password', methods=['GET', 'POST'])
+def reset_password():
+    """Password reset - vulnerable to predictable token generation"""
+    if request.method == 'POST':
+        email = request.form['email']
+
+        # VULNERABILITY: Predictable reset token (base64 of email)
+        token = base64.b64encode(email.encode()).decode()
+        flash(f'Password reset link: /reset_token?token={token}', 'info')
+
+    return render_template('reset_password.html')
+
+@app.route('/reset_token')
+def reset_token():
+    """Password reset token - vulnerable to token prediction"""
+    token = request.args.get('token', '')
+
+    # VULNERABILITY: Weak token validation
+    try:
+        email = base64.b64decode(token.encode()).decode()
+        flash(f'Password reset for {email} - new password: password123', 'success')
+    except:
+        flash('Invalid token', 'error')
+
+    return render_template('reset_token.html')
+
+@app.route('/debug')
+def debug():
+    """Debug page - exposes os.environ, session data, headers, DB path"""
+    # VULNERABILITY: Critical information disclosure
+    debug_info = {
+        'environment': os.environ.copy(),
+        'session_data': dict(session),
+        'request_headers': dict(request.headers),
+        'database_path': DATABASE
+    }
+    return jsonify(debug_info)
+
+@app.route('/config')
+def config():
+    """Config page - exposes hardcoded credentials and API keys"""
+    # VULNERABILITY: Hardcoded credentials exposure
+    config_data = {
+        'database': {
+            'type': 'sqlite', 'path': DATABASE,
+            'username': 'admin', 'password': 'admin123'
+        },
+        'api_keys': {
+            'google_maps': 'AIzaSyDummyKeyForTesting',
+            'stripe': 'sk_test_DummyKeyForTesting'
+        },
+        'app_settings': {
+            'debug': True,
+            'secret_key': app.secret_key
+        }
+    }
+    return jsonify(config_data)
+
+if __name__ == '__main__':
+    init_db()
+    app.run(host='0.0.0.0', port=8085, debug=True)
+================================================================================
+END OF FILE 1
+================================================================================
+
+
+================================================================================
+FILE 2: vulnerable-app/Dockerfile
+================================================================================
+EXPLANATION:
+Builds vulnerable Flask app image. Uses python:3.11-slim, installs sqlite3,
+creates uploads/ and database/ directories, exposes port 8085.
+--------------------------------------------------------------------------------
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN mkdir -p uploads
+RUN mkdir -p database
+
+EXPOSE 8085
+
+ENV FLASK_APP=app.py
+ENV FLASK_ENV=production
+
+CMD ["python", "app.py"]
+================================================================================
+END OF FILE 2
+================================================================================
+
+
+================================================================================
+FILE 3: vulnerable-app/requirements.txt
+================================================================================
+EXPLANATION:
+Minimal pinned dependencies. Only Flask and its core dependencies — no security
+middleware intentionally omitted to keep the app vulnerable.
+--------------------------------------------------------------------------------
+Flask==2.3.3
+Werkzeug==2.3.7
+Jinja2==3.1.2
+itsdangerous==2.1.2
+click==8.1.7
+MarkupSafe==2.1.3
+================================================================================
+END OF FILE 3
+================================================================================
+
+
+================================================================================
+FILE 4: vulnerable-app/docker-compose.yml
+================================================================================
+EXPLANATION:
+Single-service compose file. Mounts ./database and ./uploads as volumes so
+SQLite DB and uploaded files persist across container restarts.
+--------------------------------------------------------------------------------
+version: '3.8'
+
+services:
+  vulnerable-app:
+    build: .
+    container_name: aegentra-vulnerable-app
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./database:/app/database
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    environment:
+      - FLASK_ENV=production
+      - FLASK_DEBUG=0
+================================================================================
+END OF FILE 4
+================================================================================
+
+
+================================================================================
+FILE 5: vulnerable-app/setup.sh
+================================================================================
+EXPLANATION:
+Bash setup script. Checks Docker and Docker Compose are installed, creates
+database/ and uploads/ directories, builds and starts the container, waits 5s,
+then verifies the app is up with curl. Prints test credentials and quick test
+commands on success.
+--------------------------------------------------------------------------------
+#!/bin/bash
+
+echo "🚀 Setting up AEGENTRA Vulnerable Test Application..."
+
+if ! command -v docker &> /dev/null; then
+    echo "❌ Docker is not installed. Please install Docker first."
+    exit 1
+fi
+
+if ! command -v docker-compose &> /dev/null; then
+    echo "❌ Docker Compose is not installed. Please install Docker Compose first."
+    exit 1
+fi
+
+echo "📁 Creating directories..."
+mkdir -p database uploads
+
+echo "🐳 Building Docker image..."
+docker-compose build
+
+echo "🚀 Starting the application..."
+docker-compose up -d
+
+echo "⏳ Waiting for application to start..."
+sleep 5
+
+if curl -s http://localhost:8085 > /dev/null; then
+    echo "✅ Application is running successfully!"
+    echo ""
+    echo "🌐 Access the application at: http://localhost:8085"
+    echo ""
+    echo "📋 Test Accounts:"
+    echo "   admin / password123"
+    echo "   user1 / 123456"
+    echo "   test  / test"
+    echo "   guest / guest"
+    echo ""
+    echo "🧪 Quick Test Commands:"
+    echo "   SQL Injection: Try login with username: ' OR '1'='1"
+    echo "   XSS: Add comment with: <script>alert(1)</script>"
+    echo "   Admin Access: Go to http://localhost:8085/admin after login"
+    echo ""
+    echo "🔧 To stop the application: docker-compose down"
+else
+    echo "❌ Application failed to start. Check the logs:"
+    echo "   docker-compose logs vulnerable-app"
+fi
+================================================================================
+END OF FILE 5
+================================================================================
+
+
+================================================================================
+FILE 6: vulnerable-app/templates/base.html
+================================================================================
+EXPLANATION:
+Bootstrap 5 base template. Provides navbar (shows Dashboard/Profile/Upload/Admin
+when logged in, Login/Register when not), flash messages display, footer, and
+Bootstrap JS. All other templates extend this via {% extends "base.html" %}.
+--------------------------------------------------------------------------------
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}AEGENTRA Test App{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">AEGENTRA Test App</a>
+            <div class="navbar-nav ms-auto">
+                {% if session.username %}
+                    <a class="nav-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+                    <a class="nav-link" href="{{ url_for('profile') }}">Profile</a>
+                    <a class="nav-link" href="{{ url_for('upload') }}">Upload</a>
+                    <a class="nav-link" href="{{ url_for('admin') }}">Admin</a>
+                    <span class="navbar-text">Welcome, {{ session.username }}!</span>
+                {% else %}
+                    <a class="nav-link" href="{{ url_for('login') }}">Login</a>
+                    <a class="nav-link" href="{{ url_for('register') }}">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer class="bg-dark text-light mt-5 py-3">
+        <div class="container text-center">
+            <p>&copy; 2024 AEGENTRA Vulnerable Test Application - For Security Testing Only</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+================================================================================
+END OF FILE 6
+================================================================================
+
+
+================================================================================
+FILE 7: vulnerable-app/templates/index.html
+================================================================================
+EXPLANATION:
+Home page. Left column: welcome + feature links. Right column: "Latest Comments"
+card that renders comments with {{ comment.comment|safe }} — the |safe filter
+bypasses Jinja2 auto-escaping, enabling stored XSS. Bottom: test scenario cards
+showing SQL injection, XSS, path traversal payloads for quick testing.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Home - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h1>Welcome to AEGENTRA Test Application</h1>
+        <p class="lead">This is a deliberately vulnerable web application for testing security automation systems.</p>
+
+        <div class="alert alert-warning">
+            <strong>Warning:</strong> This application contains intentional security vulnerabilities for testing purposes only.
+        </div>
+
+        <h3>Available Features:</h3>
+        <ul>
+            <li><a href="{{ url_for('search') }}">Product Search</a></li>
+            <li><a href="{{ url_for('login') }}">User Login</a></li>
+            <li><a href="{{ url_for('register') }}">Register</a></li>
+            <li><a href="{{ url_for('upload') }}">File Upload</a></li>
+        </ul>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5>Latest Comments</h5></div>
+            <div class="card-body">
+                {% if comments %}
+                    {% for comment in comments %}
+                        <div class="mb-3">
+                            <strong>{{ comment.username }}:</strong>
+                            <!-- VULNERABILITY: XSS - No output encoding -->
+                            <p>{{ comment.comment|safe }}</p>
+                            <small class="text-muted">{{ comment.created_at }}</small>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No comments yet.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h5>Test Scenarios</h5></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Authentication Tests:</h6>
+                        <ul>
+                            <li>SQL injection: <code>' OR '1'='1</code></li>
+                            <li>Weak passwords: <code>admin/password123</code></li>
+                            <li>Admin bypass test</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Input Validation Tests:</h6>
+                        <ul>
+                            <li>XSS: <code>&lt;script&gt;alert(1)&lt;/script&gt;</code></li>
+                            <li>SQLi search: <code>' UNION SELECT * FROM users--</code></li>
+                            <li>Path traversal: <code>../../../etc/passwd</code></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 7
+================================================================================
+
+
+================================================================================
+FILE 8: vulnerable-app/templates/login.html
+================================================================================
+EXPLANATION:
+Login form extending base.html. Hints test credentials and SQL injection payloads
+directly in the UI. No CSRF protection on POST.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Login - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>Login</h3></div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                        <div class="form-text">Test accounts: admin/password123, user1/123456, test/test, guest/guest</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                        <div class="form-text">Try SQL injection: <code>' OR '1'='1</code></div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                    <a href="{{ url_for('register') }}" class="btn btn-link">Register</a>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header"><h5>Security Test Cases</h5></div>
+            <div class="card-body">
+                <h6>SQL Injection Tests:</h6>
+                <ul>
+                    <li><code>' OR '1'='1</code></li>
+                    <li><code>' UNION SELECT * FROM users--</code></li>
+                    <li><code>' OR 1=1 #</code></li>
+                </ul>
+                <h6>Authentication Bypass:</h6>
+                <ul>
+                    <li>Try <a href="{{ url_for('admin') }}">/admin</a> without login</li>
+                    <li>Test predictable reset tokens</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 8
+================================================================================
+
+
+================================================================================
+FILE 9: vulnerable-app/templates/register.html
+================================================================================
+EXPLANATION:
+Registration form. Explicitly states that MD5 hashing is used (no salt), no email
+verification, no rate limiting, no CSRF token — all intentional vulnerabilities.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Register - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>Register</h3></div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                        <div class="form-text"><strong>Vulnerability:</strong> Passwords stored using weak MD5 hashing</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Register</button>
+                    <a href="{{ url_for('login') }}" class="btn btn-link">Login</a>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header"><h5>Security Issues</h5></div>
+            <div class="card-body">
+                <ul>
+                    <li>MD5 hashing (cryptographically broken)</li>
+                    <li>No salt in password hashing</li>
+                    <li>No password complexity requirements</li>
+                    <li>No email verification</li>
+                    <li>No rate limiting</li>
+                    <li>No CSRF protection</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 9
+================================================================================
+
+
+================================================================================
+FILE 10: vulnerable-app/templates/dashboard.html
+================================================================================
+EXPLANATION:
+Shows ALL users (id/username/email/role) and ALL products to any logged-in user —
+intentional information disclosure. Also has IDOR test links to profile?id=1/2/3
+and SQL injection test links for product URLs.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Dashboard - AEGENTRA Test App{% endblock %}
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5>All Users</h5></div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Role</th></tr></thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>{{ user.role }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Information disclosure - all user data exposed to any logged-in user.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h5>Products</h5></div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead><tr><th>ID</th><th>Name</th><th>Price</th><th>Category</th></tr></thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr>
+                            <td>{{ product.id }}</td>
+                            <td><a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.name }}</a></td>
+                            <td>${{ product.price }}</td>
+                            <td>{{ product.category }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><h5>Security Test Scenarios</h5></div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h6>IDOR Test:</h6>
+                        <ul>
+                            <li><a href="{{ url_for('profile', id=1) }}">User ID 1</a></li>
+                            <li><a href="{{ url_for('profile', id=2) }}">User ID 2</a></li>
+                            <li><a href="{{ url_for('profile', id=3) }}">User ID 3</a></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>SQL Injection:</h6>
+                        <ul>
+                            <li><a href="/product/1">Normal Product</a></li>
+                            <li><a href="/product/1' OR '1'='1">SQLi Test</a></li>
+                        </ul>
+                    </div>
+                    <div class="col-md-4">
+                        <h6>Admin Access:</h6>
+                        <ul>
+                            <li><a href="{{ url_for('admin') }}">Admin Panel</a></li>
+                            <li><a href="{{ url_for('debug') }}">Debug Info</a></li>
+                            <li><a href="{{ url_for('config') }}">Config Info</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 10
+================================================================================
+
+
+================================================================================
+FILE 11: vulnerable-app/templates/search.html
+================================================================================
+EXPLANATION:
+Product search page. Renders search results. Right sidebar shows SQL injection
+and XSS payloads for testing. The query variable is echoed back unescaped in
+the heading — reflected XSS vector.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Search - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Product Search</h2>
+        <form method="GET" action="{{ url_for('search') }}" class="mb-4">
+            <div class="input-group">
+                <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Search products...">
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+        </form>
+
+        {% if query %}
+            <h4>Search Results for: "{{ query }}"</h4>
+            {% if products %}
+                <div class="row">
+                    {% for product in products %}
+                        <div class="col-md-6 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ product.name }}</h5>
+                                    <p class="card-text">{{ product.description }}</p>
+                                    <p class="card-text"><strong>Price:</strong> ${{ product.price }}</p>
+                                    <a href="{{ url_for('product_detail', product_id=product.id) }}" class="btn btn-sm btn-outline-primary">View Details</a>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">No products found.</div>
+            {% endif %}
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5>Security Test Cases</h5></div>
+            <div class="card-body">
+                <h6>SQL Injection Tests:</h6>
+                <ul>
+                    <li><code>' UNION SELECT * FROM users--</code></li>
+                    <li><code>' OR 1=1--</code></li>
+                    <li><code>' UNION SELECT id,username,password,email,role,profile FROM users--</code></li>
+                </ul>
+                <h6>XSS Tests:</h6>
+                <ul>
+                    <li><code>&lt;script&gt;alert(1)&lt;/script&gt;</code></li>
+                    <li><code>&lt;img src=x onerror=alert(1)&gt;</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 11
+================================================================================
+
+
+================================================================================
+FILE 12: vulnerable-app/templates/profile.html
+================================================================================
+EXPLANATION:
+Profile page showing user data fetched by ?id= parameter — IDOR vulnerability.
+Any logged-in user can view any other user's full profile by changing the id.
+Sidebar has direct links to user IDs 1/2/3.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Profile - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header"><h3>User Profile</h3></div>
+            <div class="card-body">
+                <p><strong>User ID:</strong> {{ user.id }}</p>
+                <p><strong>Username:</strong> {{ user.username }}</p>
+                <p><strong>Email:</strong> {{ user.email }}</p>
+                <p><strong>Role:</strong> {{ user.role }}</p>
+                <p><strong>Profile:</strong> {{ user.profile or 'No profile information' }}</p>
+
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> IDOR - Try accessing other profiles:
+                    <a href="{{ url_for('profile', id=1) }}">User 1</a> |
+                    <a href="{{ url_for('profile', id=2) }}">User 2</a> |
+                    <a href="{{ url_for('profile', id=3) }}">User 3</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5>IDOR Test</h5></div>
+            <div class="card-body">
+                <p>Current User ID: {{ user.id }}</p>
+                <p>Change the id parameter to access other profiles:</p>
+                <ul>
+                    <li><a href="{{ url_for('profile', id=1) }}">?id=1</a></li>
+                    <li><a href="{{ url_for('profile', id=2) }}">?id=2</a></li>
+                    <li><a href="{{ url_for('profile', id=3) }}">?id=3</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 12
+================================================================================
+
+
+================================================================================
+FILE 13: vulnerable-app/templates/product.html
+================================================================================
+EXPLANATION:
+Product detail page. Shows product info, comments (rendered with |safe for stored
+XSS), and an add-comment form (no CSRF token). Right sidebar lists SQL injection
+and XSS payloads for the product and comment vectors.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}{{ product.name }} - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header"><h3>{{ product.name }}</h3></div>
+            <div class="card-body">
+                <p><strong>Description:</strong> {{ product.description }}</p>
+                <p><strong>Price:</strong> ${{ product.price }}</p>
+                <p><strong>Category:</strong> {{ product.category }}</p>
+                <p><strong>Product ID:</strong> {{ product.id }}</p>
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Product ID is vulnerable to SQL injection.
+                </div>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header"><h5>Comments</h5></div>
+            <div class="card-body">
+                {% if comments %}
+                    {% for comment in comments %}
+                        <div class="mb-3">
+                            <strong>{{ comment.username }}:</strong>
+                            <!-- VULNERABILITY: XSS - No output encoding -->
+                            <p>{{ comment.comment|safe }}</p>
+                            <small class="text-muted">{{ comment.created_at }}</small>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p>No comments yet.</p>
+                {% endif %}
+
+                {% if session.username %}
+                    <hr>
+                    <h6>Add Comment</h6>
+                    <form method="POST" action="{{ url_for('add_comment') }}">
+                        <input type="hidden" name="product_id" value="{{ product.id }}">
+                        <div class="mb-3">
+                            <textarea class="form-control" name="comment" rows="3" required></textarea>
+                            <div class="form-text">Try XSS: <code>&lt;script&gt;alert(1)&lt;/script&gt;</code></div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Comment</button>
+                    </form>
+                {% else %}
+                    <p><a href="{{ url_for('login') }}">Login</a> to add comments.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5>Test Scenarios</h5></div>
+            <div class="card-body">
+                <h6>SQL Injection:</h6>
+                <ul>
+                    <li><a href="/product/1' OR '1'='1">Basic SQLi</a></li>
+                    <li><a href="/product/1' UNION SELECT * FROM users--">Union-based</a></li>
+                </ul>
+                <h6>XSS in Comments:</h6>
+                <ul>
+                    <li><code>&lt;script&gt;alert(1)&lt;/script&gt;</code></li>
+                    <li><code>&lt;img src=x onerror=alert(1)&gt;</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 13
+================================================================================
+
+
+================================================================================
+FILE 14: vulnerable-app/templates/upload.html
+================================================================================
+EXPLANATION:
+File upload form. No type/size restrictions. Lists path traversal test cases
+and malicious file types (PHP web shell, HTML XSS, .exe malware) for testing.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}File Upload - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header"><h3>File Upload</h3></div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select File</label>
+                        <input type="file" class="form-control" id="file" name="file" required>
+                        <div class="form-text">
+                            <strong>Vulnerability:</strong> No file type restrictions - any file can be uploaded
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload File</button>
+                </form>
+
+                <div class="mt-3">
+                    <p>Access uploaded files at: <code>/uploads/filename</code></p>
+                    <div class="alert alert-warning">
+                        <strong>Path Traversal Test:</strong> Try <code>/uploads/../../../etc/passwd</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header"><h5>Security Test Cases</h5></div>
+            <div class="card-body">
+                <h6>File Upload Vulnerabilities:</h6>
+                <ul>
+                    <li>No file type validation</li>
+                    <li>No file size limits</li>
+                    <li>Executable files allowed</li>
+                    <li>Web shell upload possible</li>
+                </ul>
+                <h6>Malicious Files to Test:</h6>
+                <ul>
+                    <li>PHP web shell: <code>shell.php</code></li>
+                    <li>HTML with JavaScript: <code>malicious.html</code></li>
+                    <li>Executable: <code>malware.exe</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 14
+================================================================================
+
+
+================================================================================
+FILE 15: vulnerable-app/templates/admin.html
+================================================================================
+EXPLANATION:
+Admin panel accessible by ANY logged-in user (no role check). Shows full user
+table with password hashes and search_logs (query + IP + user-agent). Critical
+authorization bypass + information disclosure demonstration.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Admin Panel - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-danger">
+            <strong>CRITICAL VULNERABILITY:</strong> Authorization Bypass - Any logged-in user can access admin panel!
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>User Management</h3></div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead><tr><th>ID</th><th>Username</th><th>Password Hash</th><th>Email</th><th>Role</th></tr></thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td><code>{{ user.password }}</code></td>
+                            <td>{{ user.email }}</td>
+                            <td>{{ user.role }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>Search Logs</h3></div>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead><tr><th>Query</th><th>IP Address</th><th>User Agent</th><th>Timestamp</th></tr></thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.query }}</td>
+                            <td>{{ log.ip_address }}</td>
+                            <td>{{ log.user_agent[:30] }}...</td>
+                            <td>{{ log.created_at }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 15
+================================================================================
+
+
+================================================================================
+FILE 16: vulnerable-app/templates/reset_password.html
+================================================================================
+EXPLANATION:
+Password reset request form. Tells the user the token is base64(email) and even
+shows the precomputed token for admin@test.com, demonstrating the predictable
+token vulnerability.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Reset Password - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>Reset Password</h3></div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email Address</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                        <div class="form-text">
+                            <strong>Vulnerability:</strong> Predictable reset token (base64 encoded email)
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Reset Link</button>
+                </form>
+
+                <div class="alert alert-warning mt-3">
+                    <strong>Security Issue:</strong> Reset tokens are predictable (base64 encoded email)
+                    <br>Try: <code>admin@test.com</code> → token: <code>YWRtaW5AdGVzdC5jb20=</code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 16
+================================================================================
+
+
+================================================================================
+FILE 17: vulnerable-app/templates/reset_token.html
+================================================================================
+EXPLANATION:
+Token validation page. Lists precomputed base64 tokens for all test accounts,
+showing that any attacker can craft a valid token for any user's email.
+--------------------------------------------------------------------------------
+{% extends "base.html" %}
+{% block title %}Reset Token - AEGENTRA Test App{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h3>Password Reset</h3></div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>Test Tokens:</strong>
+                    <ul>
+                        <li>admin@test.com: <code>YWRtaW5AdGVzdC5jb20=</code></li>
+                        <li>user1@test.com: <code>dXNlcjFAdGVzdC5jb20=</code></li>
+                        <li>test@test.com: <code>dGVzdEB0ZXN0LmNvbQ==</code></li>
+                    </ul>
+                </div>
+                <p>Access: <code>/reset_token?token=BASE64_ENCODED_EMAIL</code></p>
+                <div class="alert alert-warning">
+                    <strong>Vulnerability:</strong> Any base64 encoded email will be accepted as valid token.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+================================================================================
+END OF FILE 17
+================================================================================
+
+
+================================================================================
+FILE 18: venv/  (Virtual Environment)
+================================================================================
+EXPLANATION:
+Minimal Python 3.12 virtual environment at /home/sreekar/Aegentra1/venv/.
+Contains only lib/python3.12/site-packages and include/ — no pyvenv.cfg
+(incomplete venv, possibly created without --copies). Shares identical installed
+packages with aegentra-env. Used for isolated Python execution.
+
+DIRECTORY STRUCTURE:
+venv/
+├── include/
+│   └── python3.12/
+└── lib/
+    └── python3.12/
+        └── site-packages/
+            (same packages as aegentra-env — see File 19 for full list)
+================================================================================
+END OF FILE 18
+================================================================================
+
+
+================================================================================
+FILE 19: aegentra-env/  (Main Virtual Environment)
+================================================================================
+EXPLANATION:
+Primary Python 3.12 virtual environment at /home/sreekar/Aegentra1/aegentra-env/.
+All AEGENTRA agents run inside this venv. Created with python3 -m venv.
+Contains all runtime dependencies for the full pipeline.
+
+PYVENV.CFG:
+home = /usr/bin
+include-system-site-packages = false
+version = 3.12.3
+executable = /usr/bin/python3.12
+command = /home/sreekar/Aegentra1/aegentra-env/bin/python3 -m venv /home/sreekar/Aegentra1/aegentra-env
+
+INSTALLED PACKAGES (pip list):
+Package                    Version
+-------------------------- ----------
+annotated-types            0.7.0       # Pydantic type annotations support
+certifi                    2026.1.4    # SSL root certificates
+cffi                       2.0.0       # C Foreign Function Interface for cryptography
+charset-normalizer         3.4.4       # Encoding detection for requests
+cryptography               46.0.5      # Low-level cryptographic primitives
+google-api-core            2.30.0      # Google API client core
+google-api-python-client   2.190.0     # Google API Python client
+google-auth                2.48.0      # Google authentication
+google-auth-httplib2       0.3.0       # httplib2 transport for google-auth
+googleapis-common-protos   1.72.0      # Common Protocol Buffer types for Google APIs
+grpcio                     1.78.1      # gRPC framework
+grpcio-status              1.71.2      # gRPC status codes
+httplib2                   0.31.2      # HTTP client library
+idna                       3.11        # Internationalized Domain Names
+kafka-python-ng            2.2.3       # Kafka client (KafkaConsumer/KafkaProducer)
+pip                        24.0        # Package installer
+proto-plus                 1.27.1      # Protocol Buffers Python wrapper
+protobuf                   5.29.6      # Protocol Buffers serialization
+pyasn1                     0.6.2       # ASN.1 library
+pyasn1-modules             0.4.2       # ASN.1 modules for pyasn1
+pycparser                  3.0         # C parser in Python
+pydantic                   2.12.5      # Data validation
+pydantic-core              2.41.5      # Pydantic core (Rust)
+pyparsing                  3.3.2       # Parsing library
+python-owasp-zap-v2.4      0.1.0       # OWASP ZAP Python API wrapper
+requests                   2.32.5      # HTTP requests library
+rsa                        4.9.1       # RSA encryption
+six                        1.17.0      # Python 2/3 compatibility
+tqdm                       4.67.3      # Progress bars
+typing_extensions          4.15.0      # Typing backports
+typing-inspection          0.4.2       # Runtime type inspection
+uritemplate                4.2.0       # URI template library
+urllib3                    2.6.3       # HTTP client (used by requests)
+zaproxy                    0.5.0       # ZAP API client (zapv2)
+
+DIRECTORY STRUCTURE:
+aegentra-env/
+├── bin/
+│   ├── activate          # source this to activate venv
+│   ├── activate.csh
+│   ├── activate.fish
+│   ├── Activate.ps1
+│   ├── flask
+│   ├── httpx
+│   ├── pip / pip3 / pip3.12
+│   └── python / python3 / python3.12
+├── include/
+│   └── python3.12/
+├── lib/
+│   └── python3.12/
+│       └── site-packages/
+│           └── [all packages listed above]
+└── lib64 -> lib  (symlink)
+================================================================================
+END OF FILE 19
+================================================================================
+
+
+================================================================================
+FILE 20: scripts/setup_kafka_topics.py
+================================================================================
+EXPLANATION:
+Creates all 10 Kafka topics needed for the full AEGENTRA pipeline. Groups topics
+logically: 3 detection-specific (network, web, malware), 1 unified, 6 pipeline
+(correlated-incidents through audit-logs). Uses KafkaAdminClient with
+client_id='aegentra-admin'. Wrapped in a create_topics() function so it can be
+imported or run directly.
+--------------------------------------------------------------------------------
+from kafka.admin import KafkaAdminClient, NewTopic
+
+def create_topics():
+    admin_client = KafkaAdminClient(
+        bootstrap_servers='localhost:9092',
+        client_id='aegentra-admin'
+    )
+
+    topics = [
+        # Detection-specific topics (separate by source)
+        NewTopic(name='network-detection-alerts', num_partitions=3, replication_factor=1),
+        NewTopic(name='web-detection-alerts', num_partitions=3, replication_factor=1),
+        NewTopic(name='malware-detection-alerts', num_partitions=3, replication_factor=1),
+
+        # Unified alerts (all sources combined after filtering)
+        NewTopic(name='unified-alerts', num_partitions=3, replication_factor=1),
+
+        # Processing pipeline topics
+        NewTopic(name='correlated-incidents', num_partitions=2, replication_factor=1),
+        NewTopic(name='llm-analysis', num_partitions=2, replication_factor=1),
+        NewTopic(name='response-plans', num_partitions=2, replication_factor=1),
+        NewTopic(name='policy-decisions', num_partitions=2, replication_factor=1),
+        NewTopic(name='executed-actions', num_partitions=1, replication_factor=1),
+        NewTopic(name='audit-logs', num_partitions=1, replication_factor=1),
+    ]
+
+    try:
+        admin_client.create_topics(new_topics=topics, validate_only=False)
+        print("✅ Topics created successfully!")
+        for topic in topics:
+            print(f"  - {topic.name}")
+    except Exception as e:
+        print(f"Note: {e}")
+        print("(Topics may already exist, which is fine)")
+    finally:
+        admin_client.close()
+
+if __name__ == "__main__":
+    create_topics()
+================================================================================
+END OF FILE 20
+================================================================================
+
+
+================================================================================
+FILE 21: scripts/test_producer.py
+================================================================================
+EXPLANATION:
+Sends 5 hardcoded test alerts to the 'detection-alerts' topic to verify the
+pipeline works end-to-end without running ZAP. Each alert simulates a real
+Suricata-style event: Port Scan, SSH Brute Force, Malware C2, SQL Injection,
+Privilege Escalation. Uses source IP as the Kafka partition key so same-IP
+events go to the same partition.
+--------------------------------------------------------------------------------
+#!/usr/bin/env python3
+"""Test Producer - Sends test alerts to Kafka"""
+
+import json
+import time
+from kafka import KafkaProducer
+from datetime import datetime
+
+KAFKA_SERVERS = ['localhost:9092']
+TOPIC = 'detection-alerts'
+
+def create_test_alert(alert_id, source_ip, attack_type, severity):
+    return {
+        'alert_id': alert_id,
+        'timestamp': datetime.utcnow().isoformat(),
+        'source_ip': source_ip,
+        'destination_ip': '10.0.0.10',
+        'source_port': 12345,
+        'destination_port': 22,
+        'protocol': 'TCP',
+        'alert_type': 'suricata',
+        'signature': f'ET SCAN {attack_type}',
+        'severity': severity,
+        'raw_data': {'description': f'Test {attack_type} from {source_ip}'}
+    }
+
+def main():
+    producer = KafkaProducer(
+        bootstrap_servers=KAFKA_SERVERS,
+        value_serializer=lambda v: json.dumps(v).encode('utf-8')
+    )
+
+    test_alerts = [
+        ('ALR-001', '192.168.1.50', 'Port Scan', 2),
+        ('ALR-002', '192.168.1.50', 'SSH Brute Force', 3),
+        ('ALR-003', '10.0.0.99', 'Malware C2 Communication', 3),
+        ('ALR-004', '192.168.1.75', 'SQL Injection Attempt', 3),
+        ('ALR-005', '192.168.1.50', 'Privilege Escalation', 3),
+    ]
+
+    for alert_id, source_ip, attack_type, severity in test_alerts:
+        alert = create_test_alert(alert_id, source_ip, attack_type, severity)
+        producer.send(TOPIC, key=source_ip.encode('utf-8'), value=alert)
+        print(f"✓ Sent: {alert_id} - {attack_type} from {source_ip}")
+        time.sleep(1)
+
+    producer.flush()
+    producer.close()
+    print(f"\n✓ Sent {len(test_alerts)} test alerts successfully!")
+
+if __name__ == '__main__':
+    main()
+================================================================================
+END OF FILE 21
+================================================================================
+
+
+================================================================================
+FILE 22: create_filtered_topics.py
+================================================================================
+EXPLANATION:
+Creates two overflow/sidecar topics: 'filtered-out-alerts' (3 partitions) for
+LOW severity alerts filtered by the monitoring agent, and 'held-for-review'
+(2 partitions) for HOLD decisions from the execution agent awaiting human approval.
+Run once after setup_kafka_topics.py.
+--------------------------------------------------------------------------------
+from kafka.admin import KafkaAdminClient, NewTopic
+
+admin = KafkaAdminClient(bootstrap_servers=['localhost:9092'])
+
+topics = [
+    NewTopic(name='filtered-out-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='held-for-review', num_partitions=2, replication_factor=1)
+]
+
+try:
+    admin.create_topics(new_topics=topics, validate_only=False)
+    print("✅ Filtered topics created!")
+    print("  - filtered-out-alerts (for monitoring agent)")
+    print("  - held-for-review (for execution agent)")
+except Exception as e:
+    print(f"Topics may already exist: {e}")
+
+admin.close()
+================================================================================
+END OF FILE 22
+================================================================================
+
+
+================================================================================
+FILE 23: create_summary_table.py
+================================================================================
+EXPLANATION:
+Post-run reporting tool. Reads all 8 pipeline Kafka topics from earliest offset,
+cross-references executed-actions with llm-analysis, response-plans, and
+policy-decisions by incident_id/plan_id, then builds a summary DataFrame.
+Exports to both Excel (/tmp/aegentra_summary.xlsx) and CSV (/tmp/aegentra_summary.csv)
+with columns: Incident ID, Execution ID, Threat Type, Severity, Confidence,
+MITRE Technique, Actions Total/Successful/Failed, Overall Status, Tech Stack, etc.
+--------------------------------------------------------------------------------
+#!/usr/bin/env python3
+"""Summary Table Generator - Creates Excel/CSV summary of entire pipeline"""
+
+from kafka import KafkaConsumer
+import json
+import pandas as pd
+from datetime import datetime
+import os
+
+print("=" * 60)
+print("AEGENTRA - Summary Table Generator")
+print("=" * 60)
+
+bootstrap_servers = ['localhost:9092']
+
+topics = {
+    'web-detection-alerts': [],
+    'unified-alerts': [],
+    'correlated-incidents': [],
+    'llm-analysis': [],
+    'response-plans': [],
+    'policy-decisions': [],
+    'executed-actions': [],
+    'audit-logs': []
+}
+
+print("\nReading Kafka topics...")
+
+for topic_name in topics.keys():
+    try:
+        consumer = KafkaConsumer(
+            topic_name,
+            bootstrap_servers=bootstrap_servers,
+            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
+            auto_offset_reset='earliest',
+            enable_auto_commit=False,
+            consumer_timeout_ms=5000
+        )
+        messages = [message.value for message in consumer]
+        topics[topic_name] = messages
+        consumer.close()
+        print(f"  ✅ {topic_name}: {len(messages)} messages")
+    except Exception as e:
+        print(f"  ❌ {topic_name}: {e}")
+
+summary_rows = []
+
+for execution in topics['executed-actions']:
+    incident_id = execution.get('incident_id')
+
+    analysis = next((a for a in topics['llm-analysis'] if a.get('incident_id') == incident_id), None)
+    plan = next((p for p in topics['response-plans'] if p.get('incident_id') == incident_id), None)
+    decision = next((d for d in topics['policy-decisions'] if d.get('plan_id') == execution.get('plan_id')), None)
+
+    row = {
+        'Incident ID': incident_id,
+        'Execution ID': execution.get('execution_id'),
+        'Executed At': execution.get('executed_at'),
+        'Threat Type': analysis.get('threat_type', 'Unknown') if analysis else 'Unknown',
+        'Severity': analysis.get('severity', 0) if analysis else 0,
+        'Confidence': analysis.get('confidence', 0) if analysis else 0,
+        'MITRE Technique': analysis.get('mitre_technique', '') if analysis else '',
+        'MITRE Tactic': analysis.get('mitre_tactic', '') if analysis else '',
+        'Actions Total': execution.get('actions_total', 0),
+        'Actions Successful': execution.get('actions_successful', 0),
+        'Actions Failed': execution.get('actions_failed', 0),
+        'Overall Status': execution.get('overall_status'),
+        'Decision': decision.get('decision', 'Unknown') if decision else 'Unknown',
+        'Tech Stack': f"{plan.get('tech_stack', {}).get('web_server', 'unknown')}/{plan.get('tech_stack', {}).get('language', 'unknown')}" if plan else 'unknown',
+        'Automation Approved': execution.get('automation_approved', False),
+        'Real Execution': execution.get('real_execution', False)
+    }
+    summary_rows.append(row)
+
+df = pd.DataFrame(summary_rows)
+df = df.sort_values('Executed At', ascending=False)
+
+output_file = '/tmp/aegentra_summary.xlsx'
+df.to_excel(output_file, index=False, sheet_name='Execution Summary')
+
+csv_file = '/tmp/aegentra_summary.csv'
+df.to_csv(csv_file, index=False)
+
+print(f"\n✅ Excel: {output_file}")
+print(f"✅ CSV:   {csv_file}")
+print(f"\nTotal Executions: {len(df)}")
+print(f"Total Actions:    {df['Actions Total'].sum()}")
+================================================================================
+END OF FILE 23
+================================================================================
+
+
+================================================================================
+FILE 24: create_topics.py
+================================================================================
+EXPLANATION:
+Simpler/earlier version of topic creation. Creates 9 topics directly without
+wrapping in a function: web-detection-alerts, unified-alerts, correlated-incidents,
+llm-analysis, audit-logs (pipeline topics) plus detection-alerts, malware-detection-
+alerts, network-detection-alerts, raw-events (legacy/extra topics). Run once at
+project setup.
+--------------------------------------------------------------------------------
+from kafka.admin import KafkaAdminClient, NewTopic
+
+admin = KafkaAdminClient(bootstrap_servers=['localhost:9092'])
+
+topics = [
+    NewTopic(name='web-detection-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='unified-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='correlated-incidents', num_partitions=2, replication_factor=1),
+    NewTopic(name='llm-analysis', num_partitions=2, replication_factor=1),
+    NewTopic(name='audit-logs', num_partitions=1, replication_factor=1),
+    NewTopic(name='detection-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='malware-detection-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='network-detection-alerts', num_partitions=3, replication_factor=1),
+    NewTopic(name='raw-events', num_partitions=3, replication_factor=1)
+]
+
+try:
+    admin.create_topics(new_topics=topics, validate_only=False)
+    print("✅ All topics created!")
+except Exception as e:
+    print(f"Topics created (some may already exist): {e}")
+
+admin.close()
+================================================================================
+END OF FILE 24
+================================================================================
+
+
+================================================================================
+FILE 25: deploy_fixes.sh
+================================================================================
+EXPLANATION:
+One-time deployment script for applying fixes after a refactor. Deletes the two
+redundant analysis agents (ai_analysis_glm.py and ai_analysis_agent.py),
+creates backups of config.yaml and key agents in ./backups/, restarts ZAP
+container (stops old, starts fresh on port 8090 with API key disabled),
+then prints a checklist of remaining manual steps.
+--------------------------------------------------------------------------------
+#!/bin/bash
+
+echo "═══════════════════════════════════════════════════════════"
+echo "         AEGENTRA - DEPLOYING ALL FIXES"
+echo "═══════════════════════════════════════════════════════════"
+
+cd ~/Aegentra1
+
+# 1. DELETE REDUNDANT FILES
+echo "1. Deleting redundant analysis agents..."
+rm -f agents/analysis/ai_analysis_glm.py
+rm -f agents/analysis/ai_analysis_agent.py
+echo "   ✅ Deleted redundant files"
+
+# 2. BACKUP CURRENT FILES
+echo "2. Creating backups..."
+mkdir -p backups
+cp config.yaml backups/config.yaml.backup
+cp agents/correlation/correlation_agent.py backups/correlation_agent.py.backup
+cp agents/execution/real_execution_agent.py backups/real_execution_agent.py.backup
+echo "   ✅ Backups created in ./backups/"
+
+# 3. UPDATE CONFIG.YAML (manual - show reminder)
+echo "3. UPDATE config.yaml manually with new settings"
+echo "   ⚠️  Open config.yaml and paste the updated version"
+
+# 4. RESTART INFRASTRUCTURE
+echo "4. Restarting infrastructure..."
+docker stop zap
+docker rm zap
+docker run -d --name zap --network host \
+  ghcr.io/zaproxy/zaproxy:stable \
+  zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+
+echo "   Waiting for ZAP to start (60 seconds)..."
+sleep 60
+echo "   ✅ ZAP restarted"
+
+# 5. VERIFY
+echo "5. Verifying installation..."
+echo "   Files to verify:"
+echo "   - config.yaml (updated)"
+echo "   - agents/correlation/correlation_agent.py (updated)"
+echo "   - agents/execution/real_execution_agent.py (updated)"
+echo "   - agents/analysis/ (only ai_analysis.py should remain)"
+
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "         DEPLOYMENT COMPLETE!"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "NEXT STEPS:"
+echo "1. Update config.yaml with new version"
+echo "2. Update correlation_agent.py"
+echo "3. Update real_execution_agent.py"
+echo "4. Purge Kafka topics: http://localhost:8080"
+echo "5. Run fresh scan"
+================================================================================
+END OF FILE 25
+================================================================================
+
+================================================================================
+END OF DOCUMENT
+Files covered: vulnerable-app (app.py, Dockerfile, requirements.txt,
+docker-compose.yml, setup.sh, 12 templates), venv/, aegentra-env/,
+scripts/setup_kafka_topics.py, scripts/test_producer.py,
+create_filtered_topics.py, create_summary_table.py, create_topics.py,
+deploy_fixes.sh
+================================================================================

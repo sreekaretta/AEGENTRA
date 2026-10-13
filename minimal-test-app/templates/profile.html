@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Profile - AEGENTRA Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        .vuln { background: #fff3cd; padding: 15px; margin: 10px 0; border: 1px solid #ffeaa7; }
+        .info { background: #d1ecf1d; padding: 10px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Profile</h2>
+        
+        <div class="vuln">
+            <h3>Vulnerability 4: XSS (Stored)</h3>
+            <p><strong>Bio parameter is vulnerable to XSS</strong></p>
+            <p>Current bio: {{ bio or 'Not set' }}</p>
+            <p><a href="/profile?bio=<script>alert('XSS')</script>">Test XSS</a></p>
+        </div>
+
+        <div class="vuln">
+            <h3>Vulnerability 5: Insecure Direct Object Reference</h3>
+            <p><strong>Accessing user ID: {{ user_id }}</strong></p>
+            <p>Current user: {{ user }}</p>
+            <p><a href="/profile?id=2">Try accessing user ID 2</a></p>
+        </div>
+
+        <div class="info">
+            <h3>Profile Information</h3>
+            <p><strong>Username:</strong> {{ user }}</p>
+            <p><strong>User ID:</strong> {{ user_id }}</p>
+            <p><strong>Bio:</strong> {{ bio or 'Not set' }}</p>
+        </div>
+
+        <p><a href="/">Back to Home</a></p>
+    </div>
+</body>
+</html>

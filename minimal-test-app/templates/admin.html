@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel - AEGENTRA Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .vuln { background: #d4edda; padding: 15px; margin: 10px 0; border: 1px solid #c3e6cb; }
+        .warning { background: #fff3cd; padding: 15px; margin: 10px 0; border: 1px solid #ffeaa7; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Admin Panel</h2>
+        
+        <div class="vuln">
+            <h3>Vulnerability 7: Broken Authentication</h3>
+            <p><strong>Debug parameter bypasses authentication</strong></p>
+            <p>Accessed via: /admin?debug=true</p>
+        </div>
+
+        <div class="warning">
+            <h3>Admin Functions</h3>
+            <p>This panel should only be accessible to authenticated admins</p>
+        </div>
+
+        <h3>User Management</h3>
+        <table>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>Email</th>
+                <th>Password</th>
+            </tr>
+            <tr>
+                <td>1</td>
+                <td>admin</td>
+                <td>admin@test.com</td>
+                <td>password123</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>user</td>
+                <td>user@test.com</td>
+                <td>userpass</td>
+            </tr>
+        </table>
+
+        <h3>System Information</h3>
+        <ul>
+            <li>Server: Apache/2.4.41</li>
+            <li>PHP Version: 7.4.3</li>
+            <li>Database: SQLite</li>
+            <li>Debug Mode: Enabled</li>
+        </ul>
+
+        <h3>Admin Actions</h3>
+        <ul>
+            <li><a href="/reset-password">Reset User Passwords</a></li>
+            <li><a href="/api/data">View User Data</a></li>
+            <li><a href="/download">Download System Files</a></li>
+        </ul>
+
+        <p><a href="/">Back to Home</a></p>
+    </div>
+</body>
+</html>

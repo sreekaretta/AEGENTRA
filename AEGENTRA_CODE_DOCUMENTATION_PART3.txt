@@ -1,0 +1,706 @@
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║           AEGENTRA CODE DOCUMENTATION - PART 3                                 ║
+║           Utility Scripts & Infrastructure Files                                ║
+║           Files: restart_aegentra.sh, purge_all_topics.sh, save_scan1.py,     ║
+║                  check_models.py, infrastructure/docker-compose.yml,           ║
+║                  infrastructure/init-db.sql                                    ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 1: restart_aegentra.sh
+PATH: /home/sreekar/Aegentra1/restart_aegentra.sh
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Full system restart script for AEGENTRA. Stops all 7 pipeline agents using pkill,
+  restarts Kafka (docker stop/rm + docker run with --network host), restarts OWASP ZAP
+  (same pattern), rebuilds the minimal-test-app via docker-compose, optionally starts
+  Juice Shop on port 9090, offers to purge all Kafka topics (calls purge_all_topics.sh),
+  then prints the exact terminal commands to launch all 7 agents + ZAP scanner.
+  It does NOT auto-start agents — instead it prints commands for 8 separate terminals.
+
+KEY BEHAVIOR:
+  - 8-step sequence with interactive prompt at Step 6 (topic purge: y/n)
+  - Kafka starts with --network host and KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+  - ZAP starts with api.disablekey=true so no API key is required
+  - Minimal test app started via: cd ~/Aegentra1/minimal-test-app && docker-compose up -d
+  - Final verification section shows all docker ps checks and Kafka topic list command
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+#!/bin/bash
+
+echo "═══════════════════════════════════════════════════════════"
+echo "         AEGENTRA - COMPLETE SYSTEM RESTART"
+echo "═══════════════════════════════════════════════════════════"
+
+cd ~/Aegentra1
+
+# ════════════════════════════════════════════════════════════
+# STEP 1: STOP ALL RUNNING AGENTS
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "1. STOPPING ALL RUNNING AGENTS..."
+echo "   Press Ctrl+C to stop each agent, or wait for them to finish"
+echo ""
+
+# Kill any running Python agent processes
+pkill -f "python.*monitoring_agent.py" 2>/dev/null
+pkill -f "python.*correlation_agent.py" 2>/dev/null
+pkill -f "python.*ai_analysis.py" 2>/dev/null
+pkill -f "python.*universal_response_planning_agent.py" 2>/dev/null
+pkill -f "python.*universal_policy_validation_agent.py" 2>/dev/null
+pkill -f "python.*real_execution_agent.py" 2>/dev/null
+pkill -f "python.*audit_agent.py" 2>/dev/null
+
+echo "   ✅ All agents stopped"
+
+# ════════════════════════════════════════════════════════════
+# STEP 2: STOP AND RESTART KAFKA
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "2. RESTARTING KAFKA..."
+echo ""
+
+# Check if Kafka is running
+if docker ps | grep -q kafka; then
+    echo "   Stopping Kafka..."
+    docker stop kafka
+    docker rm kafka
+    echo "   ✅ Kafka stopped"
+else
+    echo "   Kafka not running"
+fi
+
+# Start Kafka
+echo "   Starting Kafka..."
+docker run -d --name kafka \
+    --network host \
+    -e KAFKA_BROKER_ID=1 \
+    -e KAFKA_ZOOKEEPER_CONNECT=localhost:2181 \
+    -e KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092 \
+    -e KAFKA_LISTENERS=PLAINTEXT://0.0.0.0:0:9092 \
+    -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=true \
+    confluentinc/cp-kafka:latest
+
+echo "   Waiting for Kafka to start (30 seconds)..."
+sleep 30
+
+echo "   ✅ Kafka restarted"
+
+# ════════════════════════════════════════════════════════════
+# STEP 3: STOP AND RESTART ZAP
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "3. RESTARTING ZAP..."
+echo ""
+
+# Check if ZAP is running
+if docker ps | grep -q zap; then
+    echo "   Stopping ZAP..."
+    docker stop zap
+    docker rm zap
+    echo "   ✅ ZAP stopped"
+else
+    echo "   ZAP not running"
+fi
+
+# Start ZAP
+echo "   Starting ZAP..."
+docker run -d --name zap --network host \
+    ghcr.io/zaproxy/zaproxy:stable \
+    zap.sh -daemon -host 0.0.0.0 -port 8090 -config api.disablekey=true
+
+echo "   Waiting for ZAP to start (60 seconds)..."
+sleep 60
+
+echo "   ✅ ZAP restarted"
+
+# ════════════════════════════════════════════════════════════
+# STEP 4: RESTART MINIMAL TEST APP WITH NGINX
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "4. RESTARTING MINIMAL TEST APP WITH NGINX..."
+echo ""
+
+# Check if minimal test app containers are running
+if docker ps | grep -q aegentra-minimal; then
+    echo "   Stopping minimal test app containers..."
+    cd ~/Aegentra1/minimal-test-app
+    docker-compose down
+    echo "   ✅ Minimal test app stopped"
+else
+    echo "   Minimal test app not running"
+fi
+
+# Start minimal test app with Nginx
+echo "   Starting minimal test app with Nginx..."
+cd ~/Aegentra1/minimal-test-app
+docker-compose up -d
+
+echo "   Waiting for containers to start (10 seconds)..."
+sleep 10
+
+echo "   ✅ Minimal test app started"
+echo "   Flask app: http://localhost:8086"
+echo "   Nginx proxy: http://localhost:8087 (SCAN THIS PORT)"
+
+# ════════════════════════════════════════════════════════════
+# STEP 5: CHECK JUICE SHOP (OPTIONAL)
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "5. CHECKING JUICE SHOP (OPTIONAL)..."
+echo ""
+
+if docker ps | grep -q juice-shop; then
+    echo "   ✅ Juice Shop is running on port 9090"
+else
+    echo "   Juice Shop not running"
+    echo "   Starting Juice Shop..."
+    docker run -d --name juice-shop -p 9090:3000 bkimminich/juice-shop
+    echo "   Waiting for Juice Shop to start (10 seconds)..."
+    sleep 10
+    echo "   ✅ Juice Shop started"
+fi
+
+# ════════════════════════════════════════════════════════════
+# STEP 6: PURGE KAFKA TOPICS (OPTIONAL)
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "6. PURGING KAFKA TOPICS (OPTIONAL)..."
+echo ""
+echo "   Topics to purge:"
+echo "   - web-detection-alerts"
+echo "   - unified-alerts"
+echo "   - correlated-incidents"
+echo "   - llm-analysis"
+echo "   - response-plans"
+echo "   - policy-decisions"
+echo "   - executed-actions"
+echo "   - audit-logs"
+echo "   - filtered-out-alerts"
+echo "   - held-for-review"
+echo ""
+read -p "   Purge all topics? (y/n): " purge_choice
+
+if [ "$purge_choice" = "y" ]; then
+    echo "   Purging topics..."
+    ./purge_all_topics.sh
+    echo "   ✅ Topics purged"
+else
+    echo "   Skipping topic purge"
+fi
+
+# ════════════════════════════════════════════════════════════
+# STEP 7: START ALL AGENTS
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "7. STARTING ALL AGENTS..."
+echo ""
+echo "   Open 7 separate terminals and run the following commands:"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 1 - Monitoring Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/monitoring/monitoring_agent.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 2 - Correlation Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/correlation/correlation_agent.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 3 - AI Analysis Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/analysis/ai_analysis.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 4 - Response Planning Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/response/universal_response_planning_agent.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 5 - Policy Validation Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/policy_validation/universal_policy_validation_agent.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 6 - Execution Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/execution/real_execution_agent.py"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 7 - Audit Agent:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 agents/audit/audit_agent.py"
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# STEP 8: RUN ZAP SCANNER (OPTIONAL)
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "8. RUN ZAP SCANNER (OPTIONAL)..."
+echo ""
+echo "   Open TERMINAL 8 and run:"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════"
+echo "   TERMINAL 8 - ZAP Scanner:"
+echo "═══════════════════════════════════════════════════════════"
+echo "cd ~/Aegentra1"
+echo "python3 detection/zap_scanner.py"
+echo ""
+echo "   IMPORTANT: Scanner will scan http://localhost:8087 (Nginx proxy)"
+echo "   This allows AEGENTRA to patch the Nginx configuration!"
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# VERIFICATION
+# ════════════════════════════════════════════════════════════
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "         SYSTEM RESTART COMPLETE!"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "VERIFICATION:"
+echo "   Check if all services are running:"
+echo "   - Kafka: docker ps | grep kafka"
+echo "   - ZAP: docker ps | grep zap"
+echo "   - Juice Shop: docker ps | grep juice-shop"
+echo "   - Minimal Test App (Flask): docker ps | grep aegentra-minimal-flask"
+echo "   - Minimal Test App (Nginx): docker ps | grep aegentra-minimal-nginx"
+echo ""
+echo "   Check if all agents are running:"
+echo "   - ps aux | grep python.*agent"
+echo ""
+echo "   Check Kafka topics:"
+echo "   - docker exec kafka kafka-topics --bootstrap-server localhost:9092 --list"
+echo ""
+echo "   Test the minimal test app:"
+echo "   - Flask app: http://localhost:8086"
+echo "   - Nginx proxy: http://localhost:8087 (SCAN THIS PORT)"
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+─────────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 2: purge_all_topics.sh
+PATH: /home/sreekar/Aegentra1/purge_all_topics.sh
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Wipes and recreates all 8 core AEGENTRA Kafka topics for a clean start.
+  Finds the running Kafka container by name filter, then loops over the 8 pipeline
+  topics deleting each via kafka-topics.sh --delete, waits 1 second, then recreates
+  it with 3 partitions and replication-factor 1. Called by restart_aegentra.sh
+  when user answers "y" to the purge prompt.
+
+NOTE: Only covers the 8 core pipeline topics (not filtered-out-alerts or
+      held-for-review). The --delete + sleep 1 + --create pattern ensures
+      Kafka finishes cleanup before recreation.
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+#!/bin/bash
+
+# Purge all AEGENTRA topics for fresh start
+
+KAFKA_CONTAINER=$(docker ps --filter "name=kafka" --format "{{.Names}}" | head -1)
+
+if [ -z "$KAFKA_CONTAINER" ]; then
+    echo "❌ Kafka container not found!"
+    exit 1
+fi
+
+echo "🧹 Purging all AEGENTRA topics..."
+
+TOPICS=(
+    "web-detection-alerts"
+    "unified-alerts"
+    "correlated-incidents"
+    "llm-analysis"
+    "response-plans"
+    "policy-decisions"
+    "executed-actions"
+    "audit-logs"
+)
+
+for topic in "${TOPICS[@]}"; do
+    echo "  Deleting and recreating: $topic"
+
+    # Delete topic
+    docker exec $KAFKA_CONTAINER kafka-topics.sh \
+        --bootstrap-server localhost:9092 \
+        --delete --topic $topic 2>/dev/null
+
+    sleep 1
+
+    # Recreate topic
+    docker exec $KAFKA_CONTAINER kafka-topics.sh \
+        --bootstrap-server localhost:9092 \
+        --create --topic $topic \
+        --partitions 3 \
+        --replication-factor 1 2>/dev/null
+
+    echo "  ✅ $topic purged"
+done
+
+echo ""
+echo "🎉 All topics purged! Ready for fresh DVWA scan!"
+echo ""
+echo "Next steps:"
+echo "  1. Scan DVWA: python scanners/zap_scanner.py"
+echo "  2. Check topics: http://localhost:8080"
+─────────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 3: save_scan1.py
+PATH: /home/sreekar/Aegentra1/save_scan1.py
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Snapshot tool for the web-detection-alerts Kafka topic. Consumes all messages
+  from the earliest offset with a 5-second timeout, saves the full raw JSON list
+  to /tmp/scan1_alerts.json, and writes a frequency-sorted summary (count + alert
+  name per line) to /tmp/scan1_summary.txt. Used to capture a before-patches
+  baseline for comparing vulnerability counts before/after AEGENTRA patches
+  are applied.
+
+KEY FLOW:
+  1. KafkaConsumer with auto_offset_reset='earliest', consumer_timeout_ms=5000
+  2. Drain all available messages into alerts list
+  3. Write full list as pretty-printed JSON → /tmp/scan1_alerts.json
+  4. Build summary dict: alert_name → count
+  5. Write sorted-by-count summary → /tmp/scan1_summary.txt
+  6. Print same summary to stdout
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+#!/usr/bin/env python3
+import json
+from kafka import KafkaConsumer
+
+print("Reading alerts from Kafka topic 'web-detection-alerts'...")
+
+consumer = KafkaConsumer(
+    'web-detection-alerts',
+    bootstrap_servers='localhost:9092',
+    auto_offset_reset='earliest',
+    consumer_timeout_ms=5000,
+    value_deserializer=lambda m: json.loads(m.decode('utf-8'))
+)
+
+alerts = []
+for msg in consumer:
+    alerts.append(msg.value)
+
+consumer.close()
+
+# Save detailed JSON
+with open('/tmp/scan1_alerts.json', 'w') as f:
+    json.dump(alerts, f, indent=2)
+
+# Save summary by type
+summary = {}
+for alert in alerts:
+    key = alert.get('alert', 'Unknown')
+    summary[key] = summary.get(key, 0) + 1
+
+with open('/tmp/scan1_summary.txt', 'w') as f:
+    f.write(f"SCAN 1 (BEFORE PATCHES): {len(alerts)} total vulnerabilities\n")
+    f.write("=" * 80 + "\n")
+    for vuln, count in sorted(summary.items(), key=lambda x: x[1], reverse=True):
+        f.write(f"{count:3d}x  {vuln}\n")
+
+print(f"\n✅ Saved {len(alerts)} alerts to /tmp/scan1_alerts.json")
+print(f"✅ Summary saved to /tmp/scan1_summary.txt")
+print("\nScan 1 Summary:")
+print("=" * 80)
+for vuln, count in sorted(summary.items(), key=lambda x: x[1], reverse=True):
+    print(f"{count:3d}x  {vuln}")
+print("=" * 80)
+─────────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 4: check_models.py
+PATH: /home/sreekar/Aegentra1/check_models.py
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Quick diagnostic script that lists all available Gemini models that support
+  the generateContent method. Reads the GEMINI_API_KEY from environment, calls
+  genai.list_models(), filters for generateContent capability, and prints each
+  model's internal name and display name. Used to verify which Gemini models
+  are accessible before configuring the AI analysis agent.
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+import google.generativeai as genai
+import os
+
+api_key = os.environ.get('GEMINI_API_KEY')
+genai.configure(api_key=api_key)
+
+print("Available Gemini models:")
+print("=" * 50)
+
+for model in genai.list_models():
+    if 'generateContent' in model.supported_generation_methods:
+        print(f"✅ {model.name}")
+        print(f"   Display Name: {model.display_name}")
+        print()
+─────────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 5: infrastructure/docker-compose.yml
+PATH: /home/sreekar/Aegentra1/infrastructure/docker-compose.yml
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  Core infrastructure stack for AEGENTRA. Defines 5 services on a shared
+  bridge network (aegentra-net):
+    - Zookeeper (port 2181) — Kafka coordination
+    - Kafka (port 9092) — message broker; internal listener on kafka:29092,
+      external on localhost:9092; auto-creates topics enabled
+    - PostgreSQL 15 (port 5432) — persistent audit + incident DB;
+      mounts init-db.sql for automatic schema creation on first start
+    - Redis 7 (port 6379) — caching with AOF persistence + password auth
+    - Kafka UI (port 8080) — web dashboard for Kafka topic inspection
+
+  All services use named volumes for data persistence and restart: unless-stopped
+  for auto-recovery.
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+version: '3.8'
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: cyberdefense
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: SecurePassword123!
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass RedisSecurePass123!
+    volumes:
+      - redis-data:/data
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: aegentra
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - aegentra-net
+    restart: unless-stopped
+
+networks:
+  aegentra-net:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  kafka-data:
+  postgres-data:
+  redis-data:
+─────────────────────────────────────────────────────────────────────────────────
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE 6: infrastructure/init-db.sql
+PATH: /home/sreekar/Aegentra1/infrastructure/init-db.sql
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+WHAT IT DOES:
+  PostgreSQL initialization script auto-executed when the postgres container
+  first starts (mounted at /docker-entrypoint-initdb.d/init-db.sql). Creates
+  4 tables for the cyberdefense database:
+
+  TABLES:
+    incidents    — Core incident records with MITRE tactics/techniques (TEXT[]),
+                   source/dest IPs, attack_type, metadata JSONB
+    alerts       — Individual alert events linked to incidents via FK;
+                   includes source/dest IP+port, protocol, signature, raw_data JSONB
+    audit_logs   — Immutable SOC2 audit trail; agent_name, action_type,
+                   evidence JSONB, reasoning_trace TEXT, confidence_score FLOAT
+    policy_rules — Named rules with conditions JSONB, actions TEXT[], priority int
+
+  INDEXES: 6 performance indexes on created_at, severity, source_ip, incident_id,
+           audit timestamp, and audit incident_id.
+
+  SEED DATA: 3 default policy_rules inserted:
+    - high_confidence_blocking   (min_confidence: 0.85, max_risk: 8) → block_ip + alert_soc
+    - medium_confidence_monitoring (min_confidence: 0.65, max_risk: 6) → monitor + log
+    - low_confidence_logging     (min_confidence: 0.50) → log only
+
+COMPLETE CODE:
+─────────────────────────────────────────────────────────────────────────────────
+-- Aegentra Database Schema
+-- Automatically executed when PostgreSQL container starts
+
+-- Incidents table
+CREATE TABLE IF NOT EXISTS incidents (
+    id SERIAL PRIMARY KEY,
+    incident_id VARCHAR(100) UNIQUE NOT NULL,
+    severity VARCHAR(20),
+    status VARCHAR(50),
+    source_ips TEXT[],
+    destination_ips TEXT[],
+    attack_type VARCHAR(100),
+    mitre_tactics TEXT[],
+    mitre_techniques TEXT[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    metadata JSONB
+);
+
+-- Alerts table
+CREATE TABLE IF NOT EXISTS alerts (
+    id SERIAL PRIMARY KEY,
+    alert_id VARCHAR(100) UNIQUE NOT NULL,
+    incident_id VARCHAR(100) REFERENCES incidents(incident_id),
+    alert_type VARCHAR(50),
+    source_ip VARCHAR(45),
+    destination_ip VARCHAR(45),
+    source_port INTEGER,
+    destination_port INTEGER,
+    protocol VARCHAR(20),
+    signature VARCHAR(500),
+    severity INTEGER,
+    raw_data JSONB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Audit logs table (immutable)
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    agent_name VARCHAR(100) NOT NULL,
+    incident_id VARCHAR(100),
+    action_type VARCHAR(50) NOT NULL,
+    evidence JSONB,
+    policy_rule VARCHAR(200),
+    reasoning_trace TEXT,
+    confidence_score FLOAT,
+    action_outcome VARCHAR(50),
+    metadata JSONB
+);
+
+-- Policy rules table
+CREATE TABLE IF NOT EXISTS policy_rules (
+    id SERIAL PRIMARY KEY,
+    rule_name VARCHAR(200) UNIQUE NOT NULL,
+    rule_type VARCHAR(50),
+    conditions JSONB,
+    actions TEXT[],
+    enabled BOOLEAN DEFAULT true,
+    priority INTEGER DEFAULT 100,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create indexes for performance
+CREATE INDEX idx_incidents_created_at ON incidents(created_at);
+CREATE INDEX idx_incidents_severity ON incidents(severity);
+CREATE INDEX idx_alerts_source_ip ON alerts(source_ip);
+CREATE INDEX idx_alerts_incident_id ON alerts(incident_id);
+CREATE INDEX idx_audit_logs_timestamp ON audit_logs(timestamp);
+CREATE INDEX idx_audit_logs_incident_id ON audit_logs(incident_id);
+
+-- Insert default policy rules
+INSERT INTO policy_rules (rule_name, rule_type, conditions, actions, priority) VALUES
+('high_confidence_blocking', 'execution', '{"min_confidence": 0.85, "max_risk_score": 8}', ARRAY['block_ip', 'alert_soc'], 10),
+('medium_confidence_monitoring', 'execution', '{"min_confidence": 0.65, "max_risk_score": 6}', ARRAY['monitor', 'log'], 50),
+('low_confidence_logging', 'execution', '{"min_confidence": 0.50}', ARRAY['log'], 100);
+
+COMMIT;
+─────────────────────────────────────────────────────────────────────────────────
+
+
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                     END OF PART 3                                               ║
+║                                                                                 ║
+║  DOCUMENTATION SERIES COMPLETE:                                                 ║
+║    AEGENTRA_CODE_DOCUMENTATION_PART1.txt  — Files 1-10                         ║
+║    AEGENTRA_CODE_DOCUMENTATION_PART2.txt  — Files 11-32                        ║
+║    VULNERABLE_APP_AND_SCRIPTS_DOCS.txt    — vulnerable-app + venv + scripts    ║
+║    AEGENTRA_CODE_DOCUMENTATION_PART3.txt  — Utility scripts + infrastructure   ║
+╚══════════════════════════════════════════════════════════════════════════════════╝

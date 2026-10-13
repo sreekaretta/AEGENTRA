@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}File Upload - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h3>File Upload</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="file" class="form-label">Select File</label>
+                        <input type="file" class="form-control" id="file" name="file" required>
+                        <div class="form-text">
+                            <strong>Vulnerability:</strong> No file type restrictions - any file can be uploaded
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Upload File</button>
+                </form>
+                
+                {% if session.username %}
+                    <div class="mt-3">
+                        <h5>Uploaded Files</h5>
+                        <p>Access uploaded files at: <code>/uploads/filename</code></p>
+                        <div class="alert alert-warning">
+                            <strong>Path Traversal Test:</strong> Try accessing <code>/uploads/../../../etc/passwd</code>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Security Test Cases</h5>
+            </div>
+            <div class="card-body">
+                <h6>File Upload Vulnerabilities:</h6>
+                <ul>
+                    <li>No file type validation</li>
+                    <li>No file size limits</li>
+                    <li>No virus scanning</li>
+                    <li>Executable files allowed</li>
+                    <li>Web shell upload possible</li>
+                </ul>
+                
+                <h6>Path Traversal:</h6>
+                <ul>
+                    <li><code>../../../etc/passwd</code></li>
+                    <li><code>..\\..\\..\\windows\\system32\\drivers\\etc\\hosts</code></li>
+                    <li><code>../../../../proc/version</code></li>
+                </ul>
+                
+                <h6>Malicious Files to Test:</h6>
+                <ul>
+                    <li>PHP web shell: <code>shell.php</code></li>
+                    <li>HTML with JavaScript: <code>malicious.html</code></li>
+                    <li>Executable: <code>malware.exe</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

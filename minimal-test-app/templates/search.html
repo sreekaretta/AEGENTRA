@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Search - AEGENTRA Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 600px; margin: 0 auto; }
+        input { width: 100%; padding: 8px; margin: 5px 0; }
+        button { width: 100%; padding: 10px; background: #28a745; color: white; border: none; }
+        .result { margin: 20px 0; padding: 10px; background: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>Search</h2>
+        
+        <div class="vuln">
+            <p><strong>Vulnerability 2: XSS (Reflected)</strong></p>
+            <form action="/search" method="POST">
+                <input type="text" name="query" placeholder="Search anything...">
+                <button type="submit">Search</button>
+            </form>
+        </div>
+
+        <div class="vuln">
+            <p><em>SQL Injection removed to avoid duplicate vulnerability</em></p>
+        </div>
+
+        {% if result %}
+        <div class="result">
+            <h3>Search Result:</h3>
+            <p>{{ result }}</p>
+        </div>
+        {% endif %}
+
+        {% if users %}
+        <div class="result">
+            <h3>Users Found:</h3>
+            <ul>
+                {% for user in users %}
+                <li>{{ user[0] }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+
+        <p><a href="/">Back to Home</a></p>
+    </div>
+</body>
+</html>

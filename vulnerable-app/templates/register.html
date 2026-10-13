@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block title %}Register - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3>Register</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <input type="text" class="form-control" id="username" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="email" name="email" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password" required>
+                        <div class="form-text">
+                            <strong>Vulnerability:</strong> Passwords are stored using weak MD5 hashing
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Register</button>
+                    <a href="{{ url_for('login') }}" class="btn btn-link">Login</a>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>Security Issues</h5>
+            </div>
+            <div class="card-body">
+                <h6>Password Storage Vulnerabilities:</h6>
+                <ul>
+                    <li>Uses MD5 hashing (cryptographically broken)</li>
+                    <li>No salt used in password hashing</li>
+                    <li>No password complexity requirements</li>
+                    <li>Passwords transmitted in plain text (no HTTPS)</li>
+                </ul>
+                
+                <h6>Registration Issues:</h6>
+                <ul>
+                    <li>No email verification required</li>
+                    <li>No rate limiting on registration attempts</li>
+                    <li>No CSRF protection on form submission</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

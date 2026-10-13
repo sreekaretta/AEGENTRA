@@ -1,0 +1,338 @@
+# ═══════════════════════════════════════════════════════════════
+#                    AEGENTRA CONFIGURATION
+#     AI-Powered Multi-Agent Security Automation Platform
+# ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+# SCAN TARGETS
+# ═══════════════════════════════════════════════════════════════
+targets:
+  # Production environment
+  production:
+    url: "https://mycompany.com"
+    description: "Production website - requires approval"
+  
+  # Staging environment
+  staging:
+    url: "https://staging.mycompany.com"
+    description: "Staging environment"
+  
+  # DVWA - Damn Vulnerable Web App
+  dvwa:
+    url: "http://localhost:8082"
+    description: "DVWA - PHP vulnerable app"
+  
+  # bWAPP - Buggy Web Application
+  bwapp:
+    url: "http://localhost:9091"
+    description: "bWAPP - Stable PHP vulnerable app"
+  
+  # WebGoat - OWASP Learning Platform
+  webgoat:
+    url: "http://localhost:9092/WebGoat"
+    description: "WebGoat - OWASP educational platform"
+  
+  # Mutillidae - OWASP Vulnerable App
+  mutillidae:
+    url: "http://localhost:9094"
+    description: "Mutillidae - OWASP vulnerable app"
+  
+  # Juice Shop - Modern SPA
+  juiceshop:
+    url: "http://localhost:9090"
+    description: "OWASP Juice Shop - Modern SPA"
+  
+  # Test site - Public
+  testsite:
+    url: "http://testphp.vulnweb.com"
+    description: "Public test site"
+  
+  # AEGENTRA Vulnerable Test Application
+  aegentra_test:
+    url: "http://localhost:8085"
+    description: "AEGENTRA Vulnerable Test Application - 20+ vulnerabilities for testing"
+  
+  # AEGENTRA Minimal Test Application
+  minimal_test:
+    url: "http://localhost:8087"
+    description: "AEGENTRA Minimal Test Application - Exactly 10 controlled vulnerabilities with Nginx proxy for infrastructure patching"
+
+# Active target (change this to switch apps)
+active_target: "minimal_test"
+
+
+# ═══════════════════════════════════════════════════════════════
+# KAFKA MESSAGE BROKER
+# ═══════════════════════════════════════════════════════════════
+kafka:
+  bootstrap_servers: "localhost:9092"
+  
+  # Topic names (8-stage pipeline)
+  topics:
+    detection: "web-detection-alerts"      # Stage 1: Raw vulnerabilities
+    unified: "unified-alerts"              # Stage 2: Filtered alerts
+    incidents: "correlated-incidents"      # Stage 3: Grouped incidents
+    analysis: "llm-analysis"               # Stage 4: AI analysis
+    plans: "response-plans"                # Stage 5: Action plans
+    decisions: "policy-decisions"          # Stage 6: Safety decisions
+    execution: "executed-actions"          # Stage 7: Executed actions
+    audit: "audit-logs"                    # Stage 8: Audit trail
+
+
+# ═══════════════════════════════════════════════════════════════
+# AI CONFIGURATION (Pattern-Based Analysis)
+# ═══════════════════════════════════════════════════════════════
+ai:
+  provider: "pattern-matching"  # Changed from gemini
+  model: "enterprise-pattern-matching"
+  
+  # AI Analysis settings
+  max_tokens: 1000
+  temperature: 0.1
+
+
+# ═══════════════════════════════════════════════════════════════
+# SCANNING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+scanning:
+  timeout: 300              # Maximum scan time (seconds)
+  max_depth: 3              # Spider depth
+  threads: 10               # Concurrent scan threads
+  spider_max_duration: 10   # Spider timeout (minutes)
+  
+  # Scan modes
+  passive_scan: true        # Run passive scans
+  active_scan: true         # Run active scans
+  
+  # Rate limiting (to avoid overwhelming target)
+  requests_per_second: 10
+
+
+# ═══════════════════════════════════════════════════════════════
+# CORRELATION SETTINGS (NO MORE HARDCODING)
+# ═══════════════════════════════════════════════════════════════
+correlation:
+  time_window_minutes: 5      # Group alerts within 5 minutes
+  group_threshold: 5          # Create incident when 5+ alerts
+  max_alerts_per_incident: 100
+
+
+# ═══════════════════════════════════════════════════════════════
+# ANALYSIS SETTINGS (NO MORE HARDCODING)
+# ═══════════════════════════════════════════════════════════════
+analysis:
+  severity_threshold: 2       # Minimum severity to process
+  confidence_threshold: 0.7   # Minimum confidence to trust
+  max_analysis_time: 60       # Seconds per incident
+
+
+# ═══════════════════════════════════════════════════════════════
+# PATCHING CONFIGURATION (NEW - YOUR MAIN REQUIREMENT)
+# ═══════════════════════════════════════════════════════════════
+patching:
+  # Patching mode
+  mode: "balanced"  # Options: conservative, balanced, aggressive
+  
+  # What to patch automatically (SAFE actions)
+  auto_patch:
+    security_headers: true          # Apache/Nginx/IIS headers
+    waf_rules: true                 # ModSecurity/WAF rules
+    rate_limiting: true             # Request throttling
+    error_handling: true            # Disable verbose errors
+    ssl_tls: true                   # Update SSL/TLS config
+    firewall_rules: false           # Firewall (needs approval)
+    
+    # Code-level fixes (RISKY - requires testing)
+    input_validation: false         # Code changes needed
+    prepared_statements: false      # Code changes needed
+    csrf_tokens: false              # Code changes needed
+    authentication: false           # Complex logic changes
+  
+  # Safety thresholds
+  safety:
+    max_actions_per_incident: 5         # Limit actions per incident
+    require_backup: true                # Backup before patching
+    verify_syntax: true                 # Check config syntax
+    test_after_patch: true              # Test after applying
+    auto_rollback_on_failure: true      # Rollback if fails
+    production_protection: true         # Extra safety for prod
+    
+  # Verification settings
+  verification:
+    enabled: false                      # Enable verification engine
+    timeout_seconds: 10                 # Verification timeout
+    max_response_time_increase: 2.0     # 200% slower = fail
+    check_accessibility: true
+    check_errors: true
+    check_performance: true
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXECUTION SETTINGS (NO MORE HARDCODING)
+# ═══════════════════════════════════════════════════════════════
+execution:
+  timeout: 300                    # Execution timeout (seconds)
+  max_concurrent_actions: 3       # Parallel action limit
+  retry_on_failure: true
+  max_retries: 2
+  
+  # Action execution modes
+  dry_run: false                  # Set true to simulate only
+  log_all_actions: true           # Log every action
+  
+  # Container execution (for Docker-based patching)
+  container_mode: true            # Patch inside containers
+  container_prefix: ""            # Docker container name prefix
+
+
+# ═══════════════════════════════════════════════════════════════
+# POLICY VALIDATION RULES (Safety-First Automation)
+# ═══════════════════════════════════════════════════════════════
+policy:
+  # Thresholds for automatic approval
+  severity_threshold: 9       # Severity >= 9 with low confidence = HOLD
+  confidence_threshold: 0.7   # Confidence < 0.7 = HOLD
+  
+  # Risk assessment weights
+  risk_weights:
+    business_impact: 0.35
+    reversibility: 0.25
+    complexity: 0.20
+    success_probability: 0.20
+  
+  # Safe actions (approved for automation)
+  safe_actions:
+    - add_security_headers
+    - alert_security_team
+    - enable_rate_limiting
+    - add_waf_rule
+    - quarantine_url
+    - configure_web_server
+    - update_ssl_config
+    - add_content_security_policy
+    - enable_enhanced_monitoring
+  
+  # Risky actions (require human approval)
+  risky_actions:
+    - shutdown_service
+    - isolate_server
+    - block_network
+    - modify_database
+    - restart_application
+    - delete_files
+    - change_permissions
+  
+  # Business impact assessment
+  high_impact_keywords:
+    - production
+    - prod
+    - payment
+    - checkout
+    - database
+    - authentication
+    - login
+    - admin
+    - api
+
+
+# ═══════════════════════════════════════════════════════════════
+# MONITORING & ALERTING
+# ═══════════════════════════════════════════════════════════════
+monitoring:
+  # Alert channels
+  slack_webhook: ""          # Slack webhook URL (optional)
+  email_recipients: []       # Email addresses (optional)
+  pagerduty_key: ""          # PagerDuty integration (optional)
+  
+  # Alert thresholds
+  alert_on_critical: true    # Alert on critical vulnerabilities
+  alert_on_high: true        # Alert on high severity
+  alert_on_execution: false  # Alert on every execution (noisy)
+  
+  # Alert file locations
+  alert_log: "/tmp/aegentra_alerts.log"
+  monitoring_log: "/tmp/aegentra_monitoring.log"
+  ticket_log: "/tmp/aegentra_tickets.log"
+  code_fix_log: "/tmp/aegentra_code_fixes.log"
+
+
+# ═══════════════════════════════════════════════════════════════
+# LOGGING
+# ═══════════════════════════════════════════════════════════════
+logging:
+  level: "INFO"              # DEBUG, INFO, WARNING, ERROR
+  format: "detailed"         # simple, detailed
+  file: "logs/aegentra.log"  # Log file path
+
+
+# ═══════════════════════════════════════════════════════════════
+# COMPLIANCE & AUDIT
+# ═══════════════════════════════════════════════════════════════
+compliance:
+  retention_period: "7_years"  # Audit log retention
+  compliance_tags:
+    - SOC2
+    - GDPR
+    - PCI-DSS
+    - AUTOMATED
+    - ENTERPRISE
+  
+  # Audit requirements
+  require_approval_for:
+    - severity_9_or_higher   # Critical vulnerabilities
+    - database_changes       # Any DB modifications
+    - production_targets     # Production environment
+
+
+# ═══════════════════════════════════════════════════════════════
+# INFRASTRUCTURE PATCHING CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+infrastructure:
+  # Minimal Test App (YOUR MAIN TARGET)
+  minimal_test:
+    nginx_config: "~/Aegentra1/minimal-test-app/nginx.conf"
+    nginx_container: "aegentra-minimal-nginx"
+    reload_command: "docker exec aegentra-minimal-nginx nginx -s reload"
+  
+  # Juice Shop
+  juiceshop:
+    nginx_config: "/tmp/juice-nginx/nginx.conf"
+    nginx_container: "juice-shop-nginx"
+    reload_command: "docker exec juice-shop-nginx nginx -s reload"
+  
+  # Apache configuration (generic)
+  apache:
+    config_dir: "/etc/apache2"
+    security_conf: "/etc/apache2/conf-enabled/security.conf"
+    htaccess_path: "/var/www/html/.htaccess"
+    restart_command: "systemctl restart apache2"
+    syntax_check: "apache2ctl configtest"
+  
+  # Nginx configuration (generic)
+  nginx:
+    config_dir: "/etc/nginx"
+    main_conf: "/etc/nginx/nginx.conf"
+    sites_available: "/etc/nginx/sites-available"
+    restart_command: "systemctl restart nginx"
+    syntax_check: "nginx -t"
+  
+  # IIS configuration (Windows)
+  iis:
+    config_path: "C:\\inetpub\\wwwroot\\web.config"
+    restart_command: "iisreset"
+  
+  # ModSecurity (WAF)
+  modsecurity:
+    rules_dir: "/etc/modsecurity/rules"
+    custom_rules: "/etc/modsecurity/custom_rules.conf"
+  
+  # Backup settings
+  backup:
+    enabled: true
+    backup_dir: "/tmp/aegentra_backups"
+    keep_backups: 10
+
+
+# ═══════════════════════════════════════════════════════════════
+# END OF CONFIGURATION
+# ═══════════════════════════════════════════════════════════════

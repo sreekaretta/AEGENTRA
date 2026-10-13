@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Search - AEGENTRA Test App{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <h2>Product Search</h2>
+        
+        <form method="GET" action="{{ url_for('search') }}" class="mb-4">
+            <div class="input-group">
+                <input type="text" class="form-control" name="q" value="{{ query }}" placeholder="Search products...">
+                <button type="submit" class="btn btn-primary">Search</button>
+            </div>
+        </form>
+
+        {% if query %}
+            <h4>Search Results for: "{{ query }}"</h4>
+            
+            {% if products %}
+                <div class="row">
+                    {% for product in products %}
+                        <div class="col-md-6 mb-3">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ product.name }}</h5>
+                                    <p class="card-text">{{ product.description }}</p>
+                                    <p class="card-text"><strong>Price:</strong> ${{ product.price }}</p>
+                                    <p class="card-text"><small class="text-muted">Category: {{ product.category }}</small></p>
+                                    <a href="{{ url_for('product_detail', product_id=product.id) }}" class="btn btn-sm btn-outline-primary">View Details</a>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="alert alert-info">No products found matching your search.</div>
+            {% endif %}
+        {% endif %}
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Security Test Cases</h5>
+            </div>
+            <div class="card-body">
+                <h6>SQL Injection Tests:</h6>
+                <ul>
+                    <li><code>' UNION SELECT * FROM users--</code></li>
+                    <li><code>' OR 1=1--</code></li>
+                    <li><code>' UNION SELECT id,username,password,email,role,profile FROM users--</code></li>
+                    <li><code>' UNION SELECT 1,sqlite_version(),3,4,5,6--</code></li>
+                </ul>
+                
+                <h6>XSS Tests:</h6>
+                <ul>
+                    <li><code><script>alert(1)</script></code></li>
+                    <li><code><img src=x onerror=alert(1)></code></li>
+                    <li><code><svg onload=alert(1)></code></li>
+                </ul>
+                
+                <div class="alert alert-warning">
+                    <strong>Note:</strong> This search function is vulnerable to SQL injection and XSS attacks for testing purposes.
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header">
+                <h5>Search Tips</h5>
+            </div>
+            <div class="card-body">
+                <p>Try searching for:</p>
+                <ul>
+                    <li>Normal terms: laptop, phone, book</li>
+                    <li>SQL injection payloads</li>
+                    <li>XSS payloads</li>
+                    <li>Blind SQL injection: <code>' AND (SELECT COUNT(*) FROM users) > 0--</code></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

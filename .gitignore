@@ -1,0 +1,41 @@
+# Virtual environments
+aegentra-env/
+venv/
+env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+logs/
+*.log
+
+# Nginx backup files
+*.backup_*
+
+# Database files
+*.db
+*.sqlite3
+
+# Uploads
+minimal-test-app/uploads/*
+!minimal-test-app/uploads/.gitkeep
+
+# Environment / secrets
+.env
+*.env
+
+# Temp files
+/tmp/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
