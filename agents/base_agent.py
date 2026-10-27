@@ -14,22 +14,25 @@ logger = logging.getLogger(__name__)
 class BaseAgent:
     """Base class for all agents in the Aegentra system"""
     
-    def __init__(self, agent_name, input_topic, output_topic=None):
+    def __init__(self, agent_name, input_topic, output_topic=None, consumer_kwargs=None):
         self.agent_name = agent_name
         self.input_topic = input_topic
         self.output_topic = output_topic
-        
+
+        consumer_config = {
+            'bootstrap_servers': ['localhost:9092'],
+            'value_deserializer': lambda m: json.loads(m.decode('utf-8')),
+            'group_id': f"{self.agent_name}-group",
+            'auto_offset_reset': 'earliest',
+            'enable_auto_commit': False,
+            'max_poll_interval_ms': 300000,   # 5 minutes (default)
+            'session_timeout_ms': 30000,      # 30 seconds
+        }
+        if consumer_kwargs:
+            consumer_config.update(consumer_kwargs)
+
         # Create Kafka consumer - FIXED: Subscribe only once
-        self.consumer = KafkaConsumer(
-            input_topic,
-            bootstrap_servers=['localhost:9092'],
-            value_deserializer=lambda m: json.loads(m.decode('utf-8')),
-            group_id=f"{self.agent_name}-group",
-            auto_offset_reset='earliest',
-            enable_auto_commit=False,
-            max_poll_interval_ms=300000,    # 5 minutes
-            session_timeout_ms=30000        # 30 seconds
-        )
+        self.consumer = KafkaConsumer(input_topic, **consumer_config)
         
         # Create Kafka producer (if output topic specified)
         self.producer = None

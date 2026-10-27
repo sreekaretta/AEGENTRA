@@ -18,7 +18,7 @@ class AuditAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(
-            agent_name="AuditAgent-Enterprise-v5",
+            agent_name="AuditAgent-Enterprise-v11",
             input_topic="executed-actions",
             output_topic="audit-logs"
         )

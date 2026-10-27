@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AEGENTRA AI Analysis Agent — Gemini 1.5 Flash
+AEGENTRA AI Analysis Agent — Gemini 3.5 Flash
 Drop-in replacement for ai_analysis.py.
 Same Kafka topics: reads correlated-incidents, writes llm-analysis.
 Falls back to keyword matching if the API fails or GEMINI_API_KEY is not set.
@@ -13,8 +13,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from base_agent import BaseAgent
 import json
 import logging
+import time
 import yaml
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load .env from the project root (two levels up from this file).
+# No-op if the file doesn't exist. Shell environment variables always
+# take precedence — export GEMINI_API_KEY=... still works as before.
+load_dotenv(dotenv_path=__import__("pathlib").Path(__file__).parent.parent.parent / ".env")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,6 +32,14 @@ try:
 except ImportError:
     GENAI_AVAILABLE = False
     logger.warning("google-genai package not installed — will use keyword fallback for all messages")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rate-limit pacing for the Gemini free tier (~15 RPM for gemini-3.5-flash)
+# ─────────────────────────────────────────────────────────────────────────────
+GEMINI_INTER_CALL_DELAY_SECONDS  = 4    # sleep after every successful API call
+GEMINI_QUOTA_RETRY_WAIT_SECONDS  = 60   # wait on 429 before retrying
+GEMINI_QUOTA_MAX_RETRIES         = 3    # max per-incident retries on 429 or 503
+GEMINI_OVERLOAD_RETRY_WAIT_SECONDS = 15  # wait on 503 (server overload) before retry
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Vocabulary constrained to what action_mapper.py understands exactly
@@ -79,17 +94,51 @@ THREAT_ACTIONS = {
     "Security Vulnerability":             ["alert_security_team", "enable_enhanced_monitoring"],
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Rule-based CWE and MITRE lookup tables for cross-validation.
+# "Security Vulnerability" has no specific rule entry (None) — generic catch-all.
+# ─────────────────────────────────────────────────────────────────────────────
+THREAT_CWE = {
+    "SQL Injection":                      "89",
+    "Cross-Site Scripting (XSS)":         "79",
+    "Cross-Site Request Forgery (CSRF)":  "352",
+    "Authentication Bypass":              "287",
+    "Arbitrary File Upload":              "434",
+    "Information Disclosure":             "200",
+    "Missing Security Headers":           "693",
+    "Directory Traversal":                "22",
+    "Command Injection":                  "77",
+    "XML External Entity (XXE)":          "611",
+    "Server-Side Request Forgery (SSRF)": "918",
+    "Security Vulnerability":             None,   # no specific rule
+}
+
+THREAT_MITRE_RULE = {
+    "SQL Injection":                      ("T1190", "Initial Access"),
+    "Cross-Site Scripting (XSS)":         ("T1189", "Execution"),
+    "Cross-Site Request Forgery (CSRF)":  ("T1566", "Initial Access"),
+    "Authentication Bypass":              ("T1078", "Defense Evasion"),
+    "Arbitrary File Upload":              ("T1505", "Persistence"),
+    "Information Disclosure":             ("T1083", "Discovery"),
+    "Missing Security Headers":           ("T1190", "Initial Access"),
+    "Directory Traversal":                ("T1083", "Discovery"),
+    "Command Injection":                  ("T1059", "Execution"),
+    "XML External Entity (XXE)":          ("T1190", "Initial Access"),
+    "Server-Side Request Forgery (SSRF)": ("T1090", "Command and Control"),
+    "Security Vulnerability":             None,   # no specific rule
+}
+
 
 class AIAnalysisAgent(BaseAgent):
     """
-    AEGENTRA analysis agent backed by Gemini 1.5 Flash.
+    AEGENTRA analysis agent backed by Gemini 3.5 Flash.
     Reads GEMINI_API_KEY from the environment — never hardcoded.
     Falls back to keyword pattern matching if the API call fails or key is absent.
     """
 
     def __init__(self):
         super().__init__(
-            agent_name="AIAnalysisAgent-Gemini-1.5-Flash-v2",
+            agent_name="AIAnalysisAgent-Gemini-3.5-Flash-v4",
             input_topic="correlated-incidents",
             output_topic="llm-analysis",
         )
@@ -104,11 +153,16 @@ class AIAnalysisAgent(BaseAgent):
             self.model_client = None
         else:
             self.model_client = genai.Client(api_key=api_key)
-            logger.info("✅ Gemini 1.5 Flash configured successfully")
+            logger.info("✅ Gemini 3.5 Flash configured successfully")
 
-        self.model_name = "gemini-2.5-flash"
-        self.analyzed_count = 0
-        self.api_failures = 0
+        self.model_name = "gemini-3.5-flash"
+
+        # Honest counters — llm_success_count only increments when Gemini
+        # returned output that was successfully parsed into a real analysis.
+        self.analyzed_count    = 0
+        self.llm_success_count = 0
+        self.fallback_count    = 0
+        self.llm_call_times: list = []
 
         config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config.yaml")
         with open(config_path) as f:
@@ -118,8 +172,10 @@ class AIAnalysisAgent(BaseAgent):
         )
 
         logger.info(f"✅ AI Analysis Agent initialised — model: {self.model_name}")
-        logger.info(f"   Code-fix log: {self.code_fix_log}")
-        logger.info("   Fallback: keyword pattern matching on API failure")
+        logger.info(f"   Inter-call delay : {GEMINI_INTER_CALL_DELAY_SECONDS}s (free-tier pacing)")
+        logger.info(f"   429 retry wait   : {GEMINI_QUOTA_RETRY_WAIT_SECONDS}s × {GEMINI_QUOTA_MAX_RETRIES} tries")
+        logger.info(f"   Code-fix log     : {self.code_fix_log}")
+        logger.info("   Fallback         : keyword pattern matching on API failure")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Main entry point
@@ -148,7 +204,7 @@ class AIAnalysisAgent(BaseAgent):
             return None
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Gemini call
+    # Analysis pipeline
     # ─────────────────────────────────────────────────────────────────────────
 
     def _analyse(self, incident):
@@ -160,39 +216,174 @@ class AIAnalysisAgent(BaseAgent):
 
         if not self.model_client:
             logger.warning("Gemini client unavailable — using keyword fallback")
-            self.api_failures += 1
-            return self._keyword_fallback(incident, first_alert)
+            self.fallback_count += 1
+            return self._keyword_fallback(incident, first_alert, reason="no-api-key")
 
-        try:
-            prompt = self._build_prompt(incident, first_alert)
-            response = self.model_client.models.generate_content(
-                model=self.model_name,
-                contents=prompt
+        prompt = self._build_prompt(incident, first_alert)
+        raw, elapsed = self._call_gemini_with_retry(prompt)
+
+        if raw is None:
+            # All retries exhausted (429) or non-recoverable error
+            self.fallback_count += 1
+            return self._keyword_fallback(incident, first_alert, reason="api-error")
+
+        parsed = self._parse_response(raw, incident, first_alert)
+
+        if parsed is None:
+            logger.warning("Could not parse Gemini response — using keyword fallback")
+            self.fallback_count += 1
+            return self._keyword_fallback(incident, first_alert, reason="parse-error")
+
+        # Cross-validate rule-based vs LLM CWE/MITRE; sets primary fields and adds
+        # cwe_rule, cwe_llm, mitre_rule, mitre_llm, classification_agreement
+        self._apply_cross_validation(parsed, first_alert)
+
+        if parsed.get("classification_agreement") == "disagree":
+            logger.info(
+                f"   ⚠️  Disagree: CWE rule={parsed['cwe_rule']} llm={parsed['cwe_llm']}  "
+                f"MITRE rule={parsed['mitre_rule']} llm={parsed['mitre_llm']}"
             )
-            raw = response.text
+        else:
+            logger.info(f"   ✅ classification_agreement: {parsed['classification_agreement']}")
 
-            parsed = self._parse_response(raw, incident, first_alert)
+        # Only reaches here when Gemini returned valid, parseable output
+        self.llm_success_count += 1
+        self.llm_call_times.append(elapsed)
 
-            if parsed is None:
-                logger.warning("Could not parse Gemini response — using keyword fallback")
-                self.api_failures += 1
-                return self._keyword_fallback(incident, first_alert)
+        if parsed.get("code_fix") and parsed["threat_type"] in CODE_FIX_THREAT_TYPES:
+            self._write_code_fix_log(parsed, first_alert)
 
-            if parsed.get("code_fix") and parsed["threat_type"] in CODE_FIX_THREAT_TYPES:
-                self._write_code_fix_log(parsed, first_alert)
+        # Rate-limit pacing: stay under 15 RPM on the free tier
+        time.sleep(GEMINI_INTER_CALL_DELAY_SECONDS)
 
-            return parsed
+        return parsed
 
-        except Exception as e:
-            err_str = str(e)
-            if '429' in err_str or 'RESOURCE_EXHAUSTED' in err_str:
-                # Quota exhausted — fall back immediately, do not retry
-                logger.warning("Gemini quota exhausted — switching to keyword fallback for this session")
-                self.model_client = None  # disable further API calls this session
-            else:
-                logger.error(f"Gemini API error: {e}")
-            self.api_failures += 1
-            return self._keyword_fallback(incident, first_alert)
+    # ─────────────────────────────────────────────────────────────────────────
+    # Gemini HTTP call with 429-aware retry
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _call_gemini_with_retry(self, prompt):
+        """Call Gemini API, retrying up to GEMINI_QUOTA_MAX_RETRIES times on 429 or 503.
+
+        429 (RESOURCE_EXHAUSTED) = quota hit     → wait 60s, retry
+        503 (UNAVAILABLE)        = server load   → wait 15s, retry
+        Any other error          → immediate fallback, client stays live
+
+        Returns (raw_text, elapsed_seconds) on success,
+        or (None, 0.0) after exhausted retries or a non-recoverable error.
+        The Gemini client is NEVER permanently disabled here.
+        """
+        for attempt in range(1, GEMINI_QUOTA_MAX_RETRIES + 1):
+            try:
+                t0 = time.monotonic()
+                response = self.model_client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                elapsed = time.monotonic() - t0
+                logger.info(f"   Gemini responded in {elapsed:.1f}s")
+                return response.text, elapsed
+
+            except Exception as e:
+                err_str = str(e)
+                is_quota    = "429" in err_str or "RESOURCE_EXHAUSTED" in err_str
+                is_overload = "503" in err_str or "UNAVAILABLE" in err_str
+
+                if is_quota or is_overload:
+                    wait_s = GEMINI_QUOTA_RETRY_WAIT_SECONDS if is_quota else GEMINI_OVERLOAD_RETRY_WAIT_SECONDS
+                    code   = "429 quota" if is_quota else "503 overload"
+                    if attempt < GEMINI_QUOTA_MAX_RETRIES:
+                        logger.warning(
+                            f"Gemini {code} — attempt {attempt}/{GEMINI_QUOTA_MAX_RETRIES}, "
+                            f"waiting {wait_s}s before retry…"
+                        )
+                        time.sleep(wait_s)
+                    else:
+                        logger.warning(
+                            f"Gemini {code} — exhausted {GEMINI_QUOTA_MAX_RETRIES} retries "
+                            "for this incident, using keyword fallback"
+                        )
+                        return None, 0.0
+                else:
+                    logger.error(f"Gemini API error: {e}")
+                    return None, 0.0
+
+        return None, 0.0
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Cross-validation: rule-based lookup vs Gemini output
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _apply_cross_validation(self, parsed, alert):
+        """Mutate `parsed` in-place to add cross-validation fields and set primary cwe_id /
+        mitre_technique according to the priority rule:
+          agree / rule wins disagree → rule value is primary
+          llm_only (no rule entry)   → LLM value is primary
+          rule_only (no LLM value)   → rule value is primary
+        """
+        threat_type = parsed["threat_type"]
+
+        # ── Rule-based values ────────────────────────────────────────────────
+        cwe_rule_raw   = THREAT_CWE.get(threat_type)          # str or None
+        mitre_rule_raw = THREAT_MITRE_RULE.get(threat_type)   # (T-code, tactic) or None
+        mitre_rule_code   = mitre_rule_raw[0] if mitre_rule_raw else None
+        mitre_rule_tactic = mitre_rule_raw[1] if mitre_rule_raw else None
+
+        # ── LLM values (already validated by _parse_response) ───────────────
+        cwe_llm_raw   = parsed["cwe_id"]          # raw LLM string, "0" = absent
+        mitre_llm_raw = parsed["mitre_technique"]  # T-code or "Unknown"
+
+        # Normalise to None when absent/generic
+        cwe_llm   = cwe_llm_raw   if cwe_llm_raw   not in (None, "0", "") else None
+        mitre_llm = mitre_llm_raw if mitre_llm_raw not in (None, "Unknown", "") else None
+
+        # ── Determine classification_agreement ──────────────────────────────
+        has_rule = (cwe_rule_raw is not None) or (mitre_rule_code is not None)
+        has_llm  = (cwe_llm is not None) or (mitre_llm is not None)
+
+        if not has_rule and has_llm:
+            agreement = "llm_only"
+        elif has_rule and not has_llm:
+            agreement = "rule_only"
+        elif not has_rule and not has_llm:
+            agreement = "rule_only"   # neither — rule table is the authority
+        else:
+            # Both have values — agree only if BOTH CWE and MITRE match
+            cwe_match   = (cwe_rule_raw is None) or (cwe_llm == cwe_rule_raw)
+            mitre_match = (mitre_rule_code is None) or (mitre_llm == mitre_rule_code)
+            agreement   = "agree" if (cwe_match and mitre_match) else "disagree"
+
+        # ── Pick primary cwe_id ──────────────────────────────────────────────
+        if cwe_rule_raw is not None:
+            # Rule wins on agree, disagree, or rule_only
+            primary_cwe = cwe_rule_raw
+        elif cwe_llm is not None:
+            # llm_only — LLM is the only source
+            primary_cwe = cwe_llm
+        else:
+            # Nothing from either source — fall back to scanner's own cwe_id
+            primary_cwe = str(alert.get("cwe_id", "0"))
+
+        # ── Pick primary mitre_technique / mitre_tactic ──────────────────────
+        if mitre_rule_code is not None:
+            primary_mitre  = mitre_rule_code
+            primary_tactic = mitre_rule_tactic
+        elif mitre_llm is not None:
+            primary_mitre  = mitre_llm
+            primary_tactic = parsed["mitre_tactic"]   # tactic already set from LLM
+        else:
+            primary_mitre  = "Unknown"
+            primary_tactic = "Unknown"
+
+        # ── Write all fields into parsed ─────────────────────────────────────
+        parsed["cwe_id"]                   = str(primary_cwe)
+        parsed["mitre_technique"]          = primary_mitre
+        parsed["mitre_tactic"]             = primary_tactic
+        parsed["cwe_rule"]                 = cwe_rule_raw        # str or None
+        parsed["cwe_llm"]                  = cwe_llm             # str or None
+        parsed["mitre_rule"]               = mitre_rule_code     # T-code or None
+        parsed["mitre_llm"]                = mitre_llm           # T-code or None
+        parsed["classification_agreement"] = agreement
 
     # ─────────────────────────────────────────────────────────────────────────
     # Prompt construction
@@ -278,23 +469,25 @@ Rules:
                 mitre_technique = "Unknown"
             mitre_tactic = ALLOWED_MITRE.get(mitre_technique, data.get("mitre_tactic", "Unknown"))
 
-            severity = int(data.get("severity", 5))
-            severity = max(1, min(10, severity))
+            severity   = max(1, min(10, int(data.get("severity", 5))))
+            confidence = max(0.0, min(1.0, float(data.get("confidence", 0.7))))
 
-            confidence = float(data.get("confidence", 0.7))
-            confidence = max(0.0, min(1.0, confidence))
+            reasoning = str(data.get("reasoning", "")).strip()
+            if not reasoning:
+                logger.warning("Gemini response had no reasoning — treating as parse failure")
+                return None
 
             return {
                 "analysis_id":       f"ANALYSIS-{incident.get('incident_id')}",
                 "incident_id":       incident.get("incident_id"),
                 "analyzed_at":       datetime.now().isoformat(),
                 "threat_type":       threat_type,
-                "cwe_id":            str(data.get("cwe_id", alert.get("cwe_id", "0"))),
+                "cwe_id":            str(data.get("cwe_id", "0")),  # raw LLM value; _apply_cross_validation picks primary
                 "severity":          severity,
                 "confidence":        confidence,
                 "mitre_technique":   mitre_technique,
                 "mitre_tactic":      mitre_tactic,
-                "reasoning":         data.get("reasoning", ""),
+                "reasoning":         reasoning,
                 "immediate_actions": THREAT_ACTIONS.get(threat_type, ["alert_security_team"]),
                 "original_incident": incident,
                 "model_used":        self.model_name,
@@ -335,7 +528,7 @@ Rules:
     # Keyword fallback — pipeline never dies even without an API key
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _keyword_fallback(self, incident, alert):
+    def _keyword_fallback(self, incident, alert, reason="api-error"):
         vuln = alert.get("vulnerability", "").lower()
         desc = alert.get("description", "").lower()
 
@@ -364,53 +557,79 @@ Rules:
         else:
             threat, sev, conf, mitre, tactic = "Security Vulnerability", 6, 0.70, "Unknown", "Unknown"
 
+        model_label = f"fallback-keyword-{reason}"
+
+        # Rule-based lookup for cross-validation fields (no LLM values in fallback path)
+        cwe_rule_fb   = THREAT_CWE.get(threat)
+        mitre_rule_fb = THREAT_MITRE_RULE.get(threat)
+        mitre_rule_code_fb = mitre_rule_fb[0] if mitre_rule_fb else None
+
         return {
-            "analysis_id":       f"ANALYSIS-{incident.get('incident_id')}",
-            "incident_id":       incident.get("incident_id"),
-            "analyzed_at":       datetime.now().isoformat(),
-            "threat_type":       threat,
-            "cwe_id":            str(alert.get("cwe_id", "0")),
-            "severity":          sev,
-            "confidence":        conf,
-            "mitre_technique":   mitre,
-            "mitre_tactic":      tactic,
-            "reasoning":         f"Fallback (API unavailable): pattern matched '{vuln[:60]}'",
-            "immediate_actions": THREAT_ACTIONS.get(threat, ["alert_security_team"]),
-            "original_incident": incident,
-            "model_used":        "fallback-keyword-matching",
-            "code_fix":          None,
+            "analysis_id":              f"ANALYSIS-{incident.get('incident_id')}",
+            "incident_id":              incident.get("incident_id"),
+            "analyzed_at":              datetime.now().isoformat(),
+            "threat_type":              threat,
+            "cwe_id":                   str(cwe_rule_fb or alert.get("cwe_id", "0")),
+            "severity":                 sev,
+            "confidence":               conf,
+            "mitre_technique":          mitre,
+            "mitre_tactic":             tactic,
+            "reasoning":                f"Keyword fallback ({reason}): pattern matched '{vuln[:60]}'",
+            "immediate_actions":        THREAT_ACTIONS.get(threat, ["alert_security_team"]),
+            "original_incident":        incident,
+            "model_used":               model_label,
+            "code_fix":                 None,
+            "cwe_rule":                 cwe_rule_fb,
+            "cwe_llm":                  None,
+            "mitre_rule":               mitre_rule_code_fb,
+            "mitre_llm":                None,
+            "classification_agreement": "rule_only",
         }
 
     def _empty_fallback(self, incident):
         return {
-            "analysis_id":       f"ANALYSIS-{incident.get('incident_id')}",
-            "incident_id":       incident.get("incident_id"),
-            "analyzed_at":       datetime.now().isoformat(),
-            "threat_type":       "Security Vulnerability",
-            "cwe_id":            "0",
-            "severity":          5,
-            "confidence":        0.5,
-            "mitre_technique":   "Unknown",
-            "mitre_tactic":      "Unknown",
-            "reasoning":         "No alert data in incident — manual investigation required",
-            "immediate_actions": ["alert_security_team"],
-            "original_incident": incident,
-            "model_used":        "fallback-empty",
-            "code_fix":          None,
+            "analysis_id":              f"ANALYSIS-{incident.get('incident_id')}",
+            "incident_id":              incident.get("incident_id"),
+            "analyzed_at":              datetime.now().isoformat(),
+            "threat_type":              "Security Vulnerability",
+            "cwe_id":                   "0",
+            "severity":                 5,
+            "confidence":               0.5,
+            "mitre_technique":          "Unknown",
+            "mitre_tactic":             "Unknown",
+            "reasoning":                "No alert data in incident — manual investigation required",
+            "immediate_actions":        ["alert_security_team"],
+            "original_incident":        incident,
+            "model_used":               "fallback-empty",
+            "code_fix":                 None,
+            "cwe_rule":                 None,
+            "cwe_llm":                  None,
+            "mitre_rule":               None,
+            "mitre_llm":                None,
+            "classification_agreement": "rule_only",
         }
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Shutdown summary
+    # Shutdown — truthful end-of-run summary
     # ─────────────────────────────────────────────────────────────────────────
 
     def cleanup(self):
-        logger.info(f"\n{'='*50}")
-        logger.info("AI Analysis Agent (Gemini) Summary")
-        logger.info(f"{'='*50}")
-        logger.info(f"Total analysed : {self.analyzed_count}")
-        logger.info(f"API failures   : {self.api_failures} (fell back to keyword matching)")
-        logger.info(f"Model          : {self.model_name}")
-        logger.info(f"{'='*50}")
+        avg_time = (
+            sum(self.llm_call_times) / len(self.llm_call_times)
+            if self.llm_call_times else 0.0
+        )
+        logger.info(f"\n{'='*55}")
+        logger.info("AI Analysis Agent (Gemini) — End-of-Run Summary")
+        logger.info(f"{'='*55}")
+        logger.info(f"Total processed   : {self.analyzed_count}")
+        logger.info(f"LLM success       : {self.llm_success_count}  (Gemini returned valid output)")
+        logger.info(f"Keyword fallback  : {self.fallback_count}   (no key / 429 exhausted / parse error)")
+        logger.info(f"Model             : {self.model_name}")
+        if self.llm_success_count > 0:
+            logger.info(f"Avg Gemini time   : {avg_time:.1f}s")
+        else:
+            logger.info("Avg Gemini time   : n/a (no successful LLM calls)")
+        logger.info(f"{'='*55}")
         super().cleanup()
 
 

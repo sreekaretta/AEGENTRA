@@ -26,7 +26,7 @@ class UniversalPolicyValidationAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(
-            agent_name="UniversalPolicyValidationAgent-Enterprise-v7",
+            agent_name="UniversalPolicyValidationAgent-Enterprise-v11",
             input_topic="response-plans",
             output_topic="policy-decisions"
         )

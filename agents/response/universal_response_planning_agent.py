@@ -28,7 +28,7 @@ class UniversalResponsePlanningAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(
-            agent_name="UniversalResponsePlanningAgent-Enterprise-v8",
+            agent_name="UniversalResponsePlanningAgent-Enterprise-v11",
             input_topic="llm-analysis",
             output_topic="response-plans"
         )

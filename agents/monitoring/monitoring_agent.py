@@ -18,7 +18,7 @@ class WebMonitoringAgent(BaseAgent):
     
     def __init__(self):
         super().__init__(
-            agent_name="WebMonitor-Enterprise-v9",
+            agent_name="WebMonitor-Enterprise-v11",
             input_topic="web-detection-alerts",
             output_topic="unified-alerts"
         )
